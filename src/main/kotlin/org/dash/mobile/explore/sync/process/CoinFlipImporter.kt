@@ -74,7 +74,8 @@ class CoinFlipImporter : Importer {
             add("state", inData.get("state"))
             add("postcode", inData.get("postcode"))
             add("phone", inData.get("phone"))
-            add("logo_location", inData.get("cover_image"))
+            add("logo_location", JsonPrimitive("https://drive.google.com/uc?export=view&id=12mBDyAROUG9Y4IjCDRf8YN1wesp9d280"))
+            add("cover_image", inData.get("cover_image"))
             add("latitude", inData.get("lat"))
             add("longitude", inData.get("lng"))
             add(
@@ -99,6 +100,7 @@ class CoinFlipImporter : Importer {
 
             add("instagram", inData.get("instagram"))
             add("twitter", inData.get("twitter"))
+            add("manufacturer", JsonPrimitive("coinflip"))
         }
     }
 
