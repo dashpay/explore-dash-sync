@@ -1,4 +1,4 @@
-# explore-dash-sync
+# Explore Dash Sync
 ```
 git clone https://github.com/dash-mobile-team/explore-dash-sync.git
 cd explore-dash-sync
