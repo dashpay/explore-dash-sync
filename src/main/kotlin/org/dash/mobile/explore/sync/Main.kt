@@ -9,9 +9,14 @@ import org.apache.log4j.PropertyConfigurator
 import org.dash.mobile.explore.sync.process.CoinFlipImporter
 import org.dash.mobile.explore.sync.process.SpreadsheetImporter
 import org.slf4j.LoggerFactory
-import java.io.FileWriter
 import java.util.*
 import kotlin.system.exitProcess
+import java.io.FileOutputStream
+
+import java.io.OutputStreamWriter
+
+import java.nio.charset.StandardCharsets
+
 
 private val logger = LoggerFactory.getLogger("org.dash.mobile.explore.sync.main")
 
@@ -38,8 +43,8 @@ fun main(args: Array<String>) = runBlocking {
         }
 
         logger.debug(data.toString())
-
-        FileWriter("dash-wallet-firebase.json").use { writer ->
+        
+        OutputStreamWriter(FileOutputStream("dash-wallet-firebase.json"),  StandardCharsets.UTF_8).use { writer ->
             val gson = GsonBuilder().create()
             gson.toJson(data, writer)
         }
