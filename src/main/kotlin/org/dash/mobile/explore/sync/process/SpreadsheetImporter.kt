@@ -102,6 +102,8 @@ class SpreadsheetImporter() : Importer {
                 val type = cellData.effectiveFormat?.numberFormat?.type
                 if (type.equals("NUMBER")) {
                     JsonPrimitive(cellData.userEnteredValue.numberValue)
+                } else if (type.equals("TIME")) {
+                    JsonPrimitive(cellData.formattedValue.toLowerCase())
                 } else {
                     JsonPrimitive(cellData.formattedValue)
                 }
