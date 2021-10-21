@@ -48,7 +48,7 @@ class CoinFlipImporter : Importer {
             if (response.isSuccessful) {
                 val responseData = response.body()
 
-                responseData?.results?.locations?.forEachIndexed { index, location ->
+                responseData?.results?.locations?.forEach { location ->
                     val outData = mapData(location.asJsonObject)
                     result.add(outData)
                 }
@@ -68,16 +68,21 @@ class CoinFlipImporter : Importer {
             add("id", inData.get("id"))
             add("name", inData.get("name"))
             add("address1", inData.get("address"))
-            add("address2", inData.get("address_line_1"))
-            add("address3", inData.get("address_line_2"))
             add("city", inData.get("city"))
             add("state", inData.get("state"))
             add("postcode", inData.get("postcode"))
             add("phone", inData.get("phone"))
-            add("logo_location", JsonPrimitive("https://drive.google.com/uc?export=view&id=12mBDyAROUG9Y4IjCDRf8YN1wesp9d280"))
+            add(
+                "logo_location",
+                JsonPrimitive("https://drive.google.com/uc?export=view&id=12mBDyAROUG9Y4IjCDRf8YN1wesp9d280")
+            )
             add("cover_image", inData.get("cover_image"))
-            add("latitude", inData.get("lat"))
-            add("longitude", inData.get("lng"))
+            val latJson = inData.get("lat")
+            val lat = if (latJson.isJsonNull) JsonNull.INSTANCE else JsonPrimitive(latJson.asString.toFloat())
+            add("latitude", lat)
+            val lngJson = inData.get("lng")
+            val lng = if (lngJson.isJsonNull) JsonNull.INSTANCE else JsonPrimitive(lngJson.asString.toFloat())
+            add("longitude", lng)
             add(
                 "website",
                 JsonPrimitive("https://coinflip.tech/bitcoin-atm?location=${inData.get("slug").asString}")

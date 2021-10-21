@@ -7,6 +7,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.runBlocking
 import org.apache.log4j.PropertyConfigurator
 import org.dash.mobile.explore.sync.process.CoinFlipImporter
+import org.dash.mobile.explore.sync.process.DashDirectImporter
 import org.dash.mobile.explore.sync.process.SpreadsheetImporter
 import org.slf4j.LoggerFactory
 import java.util.*
@@ -29,7 +30,7 @@ fun main(args: Array<String>) = runBlocking {
         val importers = listOf(
             SpreadsheetImporter(),
             CoinFlipImporter(),
-//            DashDirectImporter()
+            DashDirectImporter()
         )
 
         val explore = JsonObject()
@@ -42,8 +43,8 @@ fun main(args: Array<String>) = runBlocking {
             add("explore", explore)
         }
 
-        logger.debug(data.toString())
-        
+//        logger.debug(data.toString())
+
         OutputStreamWriter(FileOutputStream("dash-wallet-firebase.json"),  StandardCharsets.UTF_8).use { writer ->
             val gson = GsonBuilder().create()
             gson.toJson(data, writer)
