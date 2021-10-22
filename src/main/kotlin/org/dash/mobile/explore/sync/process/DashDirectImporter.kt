@@ -135,8 +135,9 @@ class DashDirectImporter : Importer {
 
     private fun mapData(merchant: JsonObject, location: JsonObject): JsonObject {
         return JsonObject().apply {
-            add("id", JsonPrimitive(idCounter++))
-            add("merchantId", merchant.get("Id"))
+            add("id", JsonPrimitive(idCounter))
+            add("record_id", JsonPrimitive(idCounter++))
+            add("merchant_id", merchant.get("Id"))
             add("name", merchant.get("LegalName"))
             add("address1", location.get("Address1"))
             add("address2", location.get("Address2"))
@@ -150,7 +151,7 @@ class DashDirectImporter : Importer {
             add("longitude", location.get("GpsLong"))
             add("website", merchant.get("Website"))
             add("type", merchantType(merchant))
-            add("deep_link", merchant.get("DeepLink"))
+            add("deeplink", merchant.get("DeepLink"))
 //            add("buy_sell", buySel)
             add("mon_open", location.get("MondayOpen"))
             add("mon_close", location.get("MondayClose"))
@@ -166,10 +167,6 @@ class DashDirectImporter : Importer {
             add("sat_close", location.get("SaturdayClose"))
             add("sun_open", location.get("SundayOpen"))
             add("sun_close", location.get("SundayClose"))
-
-            add("instagram", location.get("instagram"))
-            add("twitter", location.get("twitter"))
-            add("manufacturer", JsonPrimitive("coinflip"))
         }
     }
 

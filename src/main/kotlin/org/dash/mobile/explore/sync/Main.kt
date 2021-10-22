@@ -10,13 +10,11 @@ import org.dash.mobile.explore.sync.process.CoinFlipImporter
 import org.dash.mobile.explore.sync.process.DashDirectImporter
 import org.dash.mobile.explore.sync.process.SpreadsheetImporter
 import org.slf4j.LoggerFactory
+import java.io.FileOutputStream
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
 import java.util.*
 import kotlin.system.exitProcess
-import java.io.FileOutputStream
-
-import java.io.OutputStreamWriter
-
-import java.nio.charset.StandardCharsets
 
 
 private val logger = LoggerFactory.getLogger("org.dash.mobile.explore.sync.main")
@@ -34,9 +32,15 @@ fun main(args: Array<String>) = runBlocking {
         )
 
         val explore = JsonObject()
-        explore.add("last_update", JsonPrimitive(Date().time))
+        val timestamp = JsonPrimitive(Date().time)
+        explore.add("last_update", timestamp)
         importers.forEach {
-            explore.add(it.propertyName, it.import(true))
+            val entry = JsonObject()
+            entry.add("last_update", timestamp)
+            val data = it.import(true)
+            entry.add("data_size", JsonPrimitive(data.size()))
+            entry.add("data", data)
+            explore.add(it.propertyName, entry)
         }
 
         val data = JsonObject().apply {
@@ -45,7 +49,7 @@ fun main(args: Array<String>) = runBlocking {
 
 //        logger.debug(data.toString())
 
-        OutputStreamWriter(FileOutputStream("dash-wallet-firebase.json"),  StandardCharsets.UTF_8).use { writer ->
+        OutputStreamWriter(FileOutputStream("dash-wallet-firebase.json"), StandardCharsets.UTF_8).use { writer ->
             val gson = GsonBuilder().create()
             gson.toJson(data, writer)
         }

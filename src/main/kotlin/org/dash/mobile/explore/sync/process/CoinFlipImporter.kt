@@ -74,7 +74,7 @@ class CoinFlipImporter : Importer {
             add("phone", inData.get("phone"))
             add(
                 "logo_location",
-                JsonPrimitive("https://drive.google.com/uc?export=view&id=12mBDyAROUG9Y4IjCDRf8YN1wesp9d280")
+                JsonPrimitive("https://drive.google.com/uc?export=view&id=1C2aOHIUAawrfTp3vvUktXERXF_wNz8QQ")
             )
             add("cover_image", inData.get("cover_image"))
             val latJson = inData.get("lat")
