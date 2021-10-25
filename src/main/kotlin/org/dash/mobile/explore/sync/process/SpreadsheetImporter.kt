@@ -84,6 +84,7 @@ class SpreadsheetImporter() : Importer {
 
                     jsonObject.add(title, jsonElement)
                 }
+                jsonObject.add("source", JsonPrimitive("DCG"))
             }
             if (emptyRow) {
                 logger.info("num of rows ${rowIndex - 1}")
