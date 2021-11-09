@@ -1,22 +1,19 @@
 package org.dash.mobile.explore.sync.process
 
 import com.google.gson.*
-import com.google.gson.reflect.TypeToken
-import com.google.gson.stream.JsonReader
 import org.slf4j.LoggerFactory
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import java.io.IOException
-import java.io.InputStreamReader
 
 private const val BASE_URL = "https://storerocket.io/api/user/56wpZAy8An/"
 
 /**
  * Import data from CoinFlip API
  */
-class CoinFlipImporter : Importer {
+class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer {
 
     private val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
 
@@ -74,18 +71,7 @@ class CoinFlipImporter : Importer {
             add("address1", inData.get("address"))
             add("city", inData.get("city"))
             val inState = inData.get("state")
-            val outState = if (inState.isJsonNull || inState.asString.isEmpty()) {
-                JsonNull.INSTANCE
-            } else {
-                // replace state abbr with the full name e.g. AL -> Alabama, etc.
-                val inStateStr = inState.asString
-                val state = usStatesAbbrMap[inStateStr]
-                if (state != null) {
-                    JsonPrimitive(state)
-                } else {
-                    inState
-                }
-            }
+            val outState = fixStatName(inState)
             add("territory", outState)
             add("postcode", inData.get("postcode"))
             add("phone", inData.get("phone"))
@@ -139,12 +125,5 @@ class CoinFlipImporter : Importer {
         val dayClose = dayOpenClose?.run { JsonPrimitive(last()) } ?: JsonNull.INSTANCE
         outData.add("${day}_open", dayOpen)
         outData.add("${day}_close", dayClose)
-    }
-
-    private val usStatesAbbrMap by lazy {
-        val gson = Gson()
-        val type = object : TypeToken<Map<String?, String?>?>() {}.type
-        val statesJson = JsonReader(InputStreamReader(javaClass.classLoader.getResourceAsStream("states_hash.json")!!))
-        gson.fromJson(statesJson, type) as Map<String?, String?>
     }
 }

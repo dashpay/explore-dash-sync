@@ -1,8 +1,8 @@
 package org.dash.mobile.explore.sync
 
-import com.google.gson.GsonBuilder
-import com.google.gson.JsonObject
-import com.google.gson.JsonPrimitive
+import com.google.gson.*
+import com.google.gson.reflect.TypeToken
+import com.google.gson.stream.JsonReader
 import kotlinx.coroutines.*
 import kotlinx.coroutines.runBlocking
 import org.apache.log4j.PropertyConfigurator
@@ -11,31 +11,51 @@ import org.dash.mobile.explore.sync.process.DashDirectImporter
 import org.dash.mobile.explore.sync.process.SpreadsheetImporter
 import org.slf4j.LoggerFactory
 import java.io.FileOutputStream
+import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.*
 import kotlin.system.exitProcess
-import java.util.HashMap
-
-import com.google.gson.Gson
-import java.io.FileReader
-
-import com.google.gson.stream.JsonReader
-import java.io.InputStreamReader
 
 
 private val logger = LoggerFactory.getLogger("org.dash.mobile.explore.sync.main")
+
+lateinit var usStatesAbbrMap: Map<String?, String?>
+
+// replace state abbr and modified name with the classified one
+// e.g.
+// "AL" -> "Alabama"
+// " Hawaii" -> "Hawaii"
+// "New,Hampshire " -> "New Hampshire"
+// etc.
+private fun fixStatName(inState: JsonElement) = if (inState.isJsonNull || inState.asString.isEmpty()) {
+    JsonNull.INSTANCE
+} else {
+    // replace state abbr with the full name e.g. AL -> Alabama, etc.
+    val inStateStr = inState.asString.replace(',', ' ').trim()
+    val state = usStatesAbbrMap[inStateStr]
+    if (state != null) {
+        JsonPrimitive(state)
+    } else {
+        JsonPrimitive(inStateStr)
+    }
+}
 
 fun main(args: Array<String>) = runBlocking {
 
     PropertyConfigurator.configure(javaClass.classLoader.getResourceAsStream("log4j.properties"))
 
+    val gson = Gson()
+    val type = object : TypeToken<Map<String?, String?>?>() {}.type
+    val statesJson = JsonReader(InputStreamReader(javaClass.classLoader.getResourceAsStream("states_hash.json")!!))
+    usStatesAbbrMap = gson.fromJson(statesJson, type) as Map<String?, String?>
+
     launch(Dispatchers.IO) {
 
         val importers = listOf(
             SpreadsheetImporter(),
-            CoinFlipImporter(),
-            DashDirectImporter()
+            CoinFlipImporter(::fixStatName),
+            DashDirectImporter(::fixStatName)
         )
 
         val explore = JsonObject()

@@ -32,7 +32,7 @@ private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
 class SpreadsheetImporter() : Importer {
 
-    override val propertyName = "merchant"
+    override val propertyName = "dcg_merchant"
 
     private val logger = LoggerFactory.getLogger(SpreadsheetImporter::class.java)
 

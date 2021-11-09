@@ -20,7 +20,7 @@ private const val BASE_URL = "https://apidev.dashdirect.org/"
 /**
  * Import data from DashDirect API
  */
-class DashDirectImporter : Importer {
+class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer {
 
     override val propertyName = "dash_direct"
 
@@ -119,7 +119,7 @@ class DashDirectImporter : Importer {
                     }
 
                 } else {
-                    logger.error("error: ${response.errorBody()}")
+                    logger.error("error: $response")
                     break
                 }
             } catch (ex: IOException) {
@@ -127,7 +127,6 @@ class DashDirectImporter : Importer {
                 return JsonArray()
             }
         }
-        logger.info("DashDirect - total\t$idCounter")
         return result
     }
 
@@ -142,7 +141,9 @@ class DashDirectImporter : Importer {
             add("address1", location.get("Address1"))
             add("address2", location.get("Address2"))
             add("city", location.get("City"))
-            add("territory", location.get("State"))
+            val inState = location.get("State")
+            val outState = fixStatName(inState)
+            add("territory", outState)
             add("postcode", location.get("PostalCode"))
             add("phone", location.get("Phone"))
             add("logo_location", merchant.get("LogoUrl"))
