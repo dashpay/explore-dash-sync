@@ -30,6 +30,8 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
 
     override suspend fun import(save: Boolean): JsonArray {
 
+        logger.info("Importing data from CoinFlip")
+
         val gson = GsonBuilder()
             .setDateFormat("yyyy-MM-dd'T'HH:mm:ssZ")
             .create()
@@ -52,6 +54,9 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
                     val outData = mapData(location.asJsonObject)
                     result.add(outData)
                 }
+
+                logger.info("CoinFlip - imported ${result.size()} records")
+
                 return result
             } else {
                 logger.error("error: ${response.errorBody()}")

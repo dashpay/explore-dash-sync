@@ -70,6 +70,8 @@ class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> Json
 
     override suspend fun import(save: Boolean): JsonArray {
 
+        logger.info("Importing data from DashDirect")
+
         val gson = GsonBuilder()
             .setDateFormat("yyyy-MM-dd'T'HH:mm:ssZ")
             .create()
@@ -90,8 +92,8 @@ class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> Json
 
         val result = JsonArray()
         val pageSize = 20000
-        var totalPages = 1
-        var currentPageIndex = 0
+        var currentPageIndex = 1
+        var totalPages = currentPageIndex + 1
         while (currentPageIndex < totalPages) {
             val merchantLocations =
                 apiService.getAllMerchantLocations(Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex))
@@ -105,15 +107,18 @@ class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> Json
                     responseData.merchants.forEach { merchant ->
                         currentRows += merchant.locations.size()
                     }
-                    logger.info("DashDirect\t$currentPageIndex/$totalPages ($currentRows)")
+                    logger.info("DashDirect\t${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
+                    logger.info("DashDirect.totalRows:\t${responseData.totalRows}")
 
                     responseData.merchants.forEach { merchant ->
 
                         if (merchant.merchant.get("IsActive").asBoolean) {
 
                             merchant.locations.forEach { location ->
-                                val outData = mapData(merchant.merchant, location.asJsonObject)
-                                result.add(outData)
+                                if (location.asJsonObject.get("IsActive").asBoolean) {
+                                    val outData = mapData(merchant.merchant, location.asJsonObject)
+                                    result.add(outData)
+                                }
                             }
                         }
                     }
@@ -127,14 +132,15 @@ class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> Json
                 return JsonArray()
             }
         }
+
+        logger.info("DashDirect - imported ${result.size()} records")
+
         return result
     }
 
-    var idCounter = 0
-
     private fun mapData(merchant: JsonObject, location: JsonObject): JsonObject {
         return JsonObject().apply {
-            add("source_id", JsonPrimitive(idCounter++))
+            add("source_id", location.get("Id"))
             add("source", JsonPrimitive("DashDirect"))
             add("merchant_id", merchant.get("Id"))
             add("name", merchant.get("LegalName"))

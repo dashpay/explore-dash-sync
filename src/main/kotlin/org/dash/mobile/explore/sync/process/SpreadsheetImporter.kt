@@ -39,6 +39,7 @@ class SpreadsheetImporter() : Importer {
     private val jsonFactory = GsonFactory.getDefaultInstance()
 
     override suspend fun import(save: Boolean): JsonArray {
+
         // Build a new authorized API client service.
         val httpTransport = GoogleNetHttpTransport.newTrustedTransport()
         val service = Sheets.Builder(httpTransport, jsonFactory, getCredentials(httpTransport))
@@ -53,8 +54,10 @@ class SpreadsheetImporter() : Importer {
         val sheet = spreadsheet.sheets[sheetIndex]
         val gridData = sheet.data[0]
 
+        logger.info("Importing data from Google Sheet https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA")
+
         val titles = mutableListOf<String>()
-        val jsonArray = JsonArray()
+        val result = JsonArray()
         for (rowIndex in gridData.rowData.indices) {
             val rowData = gridData.rowData[rowIndex].getValues()
             val jsonObject = JsonObject()
@@ -90,9 +93,12 @@ class SpreadsheetImporter() : Importer {
                 logger.info("num of rows ${rowIndex - 1}")
                 break
             }
-            jsonArray.add(jsonObject)
+            result.add(jsonObject)
         }
-        return jsonArray
+
+        logger.info("Google Sheet - imported ${result.size()} records")
+
+        return result
     }
 
     private fun convertToJsonElement(cellData: CellData): JsonElement? {
