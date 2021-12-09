@@ -14,17 +14,25 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 
-//private const val BASE_URL = "https://api.dashdirect.org/"
-private const val BASE_URL = "https://apidev.dashdirect.org/"
+private const val BASE_URL = "https://api.dashdirect.org/"
+private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
 
 /**
  * Import data from DashDirect API
  */
-class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer {
+class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer {
 
     override val propertyName = "dash_direct"
 
     private val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
+
+    private val baseUrl by lazy {
+        if (devApi) {
+            DEV_BASE_URL
+        } else {
+            BASE_URL
+        }
+    }
 
     interface Endpoint {
 
@@ -70,7 +78,7 @@ class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> Json
 
     override suspend fun import(save: Boolean): JsonArray {
 
-        logger.info("Importing data from DashDirect")
+        logger.info("Importing data from DashDirect ($baseUrl")
 
         val gson = GsonBuilder()
             .setDateFormat("yyyy-MM-dd'T'HH:mm:ssZ")
@@ -83,7 +91,7 @@ class DashDirectImporter(private val fixStatName: (inState: JsonElement) -> Json
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(baseUrl)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()

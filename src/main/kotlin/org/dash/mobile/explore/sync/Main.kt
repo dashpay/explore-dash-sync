@@ -45,17 +45,27 @@ fun main(args: Array<String>) = runBlocking {
 
     PropertyConfigurator.configure(javaClass.classLoader.getResourceAsStream("log4j.properties"))
 
-    val gson = Gson()
+    val gsonReader = Gson()
     val type = object : TypeToken<Map<String?, String?>?>() {}.type
     val statesJson = JsonReader(InputStreamReader(javaClass.classLoader.getResourceAsStream("states_hash.json")!!))
-    usStatesAbbrMap = gson.fromJson(statesJson, type) as Map<String?, String?>
+    usStatesAbbrMap = gsonReader.fromJson(statesJson, type) as Map<String?, String?>
+
+    if (args.isNotEmpty() && args[0] != "-dev") {
+        logger.info("Invalid parameter ${args[0]} do you mean -dev?")
+        exitProcess(0)
+    }
+
+    val devMode = args.isNotEmpty() && args[0] == "-dev"
+    if (devMode) {
+        logger.info("DEV mode activated")
+    }
 
     launch(Dispatchers.IO) {
 
         val importers = listOf(
             SpreadsheetImporter(),
             CoinFlipImporter(::fixStatName),
-            DashDirectImporter(::fixStatName)
+            DashDirectImporter(devMode, ::fixStatName)
         )
 
         val explore = JsonObject()
@@ -76,7 +86,8 @@ fun main(args: Array<String>) = runBlocking {
 
 //        logger.debug(data.toString())
 
-        OutputStreamWriter(FileOutputStream("dash-wallet-firebase.json"), StandardCharsets.UTF_8).use { writer ->
+        val outFileName = if (devMode) "dash-wallet-firebase-dev.json" else "dash-wallet-firebase-prod.json"
+        OutputStreamWriter(FileOutputStream(outFileName), StandardCharsets.UTF_8).use { writer ->
             val gson = GsonBuilder().create()
             gson.toJson(data, writer)
         }
