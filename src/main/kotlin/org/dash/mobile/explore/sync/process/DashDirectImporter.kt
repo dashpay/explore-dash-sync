@@ -20,11 +20,12 @@ private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
 /**
  * Import data from DashDirect API
  */
-class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer {
+class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (inState: JsonElement) -> JsonElement) :
+    Importer() {
 
     override val propertyName = "dash_direct"
 
-    private val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
+    override val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
 
     private val baseUrl by lazy {
         if (devApi) {
@@ -146,42 +147,57 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
         return result
     }
 
+    enum class DataType {
+
+        BOOLEAN,
+        NUMBER,
+        TEXT;
+
+        fun isEquivalentTo(data: JsonPrimitive): Boolean {
+            return when (this) {
+                BOOLEAN -> data.isBoolean
+                NUMBER -> data.isNumber
+                TEXT -> data.isString
+            }
+        }
+    }
+
     private fun mapData(merchant: JsonObject, location: JsonObject): JsonObject {
         return JsonObject().apply {
-            add("source_id", location.get("Id"))
+            add("source_id", addValidOrDie("Id", location, DataType.NUMBER))
             add("source", JsonPrimitive("DashDirect"))
-            add("merchant_id", merchant.get("Id"))
-            add("name", merchant.get("LegalName"))
-            add("address1", location.get("Address1"))
-            add("address2", location.get("Address2"))
-            add("city", location.get("City"))
+            add("merchant_id", addValidOrDie("Id", merchant, DataType.NUMBER))
+            add("name", addValidOrDie("LegalName", merchant, DataType.TEXT))
+            add("address1", addValidOrDie("Address1", location, DataType.TEXT))
+            add("address2", addValidOrDie("Address2", location, DataType.TEXT))
+            add("city", addValidOrDie("City", location, DataType.TEXT))
             val inState = location.get("State")
             val outState = fixStatName(inState)
             add("territory", outState)
-            add("postcode", location.get("PostalCode"))
-            add("phone", location.get("Phone"))
-            add("logo_location", merchant.get("LogoUrl"))
-            add("cover_image", merchant.get("CardImageUrl"))
-            add("latitude", location.get("GpsLat"))
-            add("longitude", location.get("GpsLong"))
-            add("website", merchant.get("Website"))
+            add("postcode", addValidOrDie("PostalCode", location, DataType.TEXT))
+            add("phone", addValidOrDie("Phone", location, DataType.TEXT))
+            add("logo_location", addValidOrDie("LogoUrl", merchant, DataType.TEXT))
+            add("cover_image", addValidOrDie("CardImageUrl", merchant, DataType.TEXT))
+            add("latitude", addValidOrDie("GpsLat", location, DataType.NUMBER))
+            add("longitude", addValidOrDie("GpsLong", location, DataType.NUMBER))
+            add("website", addValidOrDie("Website", merchant, DataType.TEXT))
             add("type", merchantType(merchant))
-            add("deeplink", merchant.get("DeepLink"))
+            add("deeplink", addValidOrDie("DeepLink", merchant, DataType.TEXT))
 //            add("buy_sell", buySel)
-            add("mon_open", location.get("MondayOpen"))
-            add("mon_close", location.get("MondayClose"))
-            add("tue_open", location.get("TuesdayOpen"))
-            add("tue_close", location.get("TuesdayClose"))
-            add("wed_open", location.get("WednesdayOpen"))
-            add("wed_close", location.get("WednesdayClose"))
-            add("thu_open", location.get("ThursdayOpen"))
-            add("thu_close", location.get("ThursdayClose"))
-            add("fri_open", location.get("FridayOpen"))
-            add("fri_close", location.get("FridayClose"))
-            add("sat_open", location.get("SaturdayOpen"))
-            add("sat_close", location.get("SaturdayClose"))
-            add("sun_open", location.get("SundayOpen"))
-            add("sun_close", location.get("SundayClose"))
+            add("mon_open", addValidOrDie("MondayOpen", location, DataType.TEXT))
+            add("mon_close", addValidOrDie("MondayClose", location, DataType.TEXT))
+            add("tue_open", addValidOrDie("TuesdayOpen", location, DataType.TEXT))
+            add("tue_close", addValidOrDie("TuesdayClose", location, DataType.TEXT))
+            add("wed_open", addValidOrDie("WednesdayOpen", location, DataType.TEXT))
+            add("wed_close", addValidOrDie("WednesdayClose", location, DataType.TEXT))
+            add("thu_open", addValidOrDie("ThursdayOpen", location, DataType.TEXT))
+            add("thu_close", addValidOrDie("ThursdayClose", location, DataType.TEXT))
+            add("fri_open", addValidOrDie("FridayOpen", location, DataType.TEXT))
+            add("fri_close", addValidOrDie("FridayClose", location, DataType.TEXT))
+            add("sat_open", addValidOrDie("SaturdayOpen", location, DataType.TEXT))
+            add("sat_close", addValidOrDie("SaturdayClose", location, DataType.TEXT))
+            add("sun_open", addValidOrDie("SundayOpen", location, DataType.TEXT))
+            add("sun_close", addValidOrDie("SundayClose", location, DataType.TEXT))
             add("payment_method", JsonPrimitive("gift card"))
         }
     }

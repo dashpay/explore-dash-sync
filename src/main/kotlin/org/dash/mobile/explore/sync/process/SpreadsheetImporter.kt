@@ -30,11 +30,11 @@ private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
 /**
  * Import data from Google Sheet: https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
-class SpreadsheetImporter() : Importer {
+class SpreadsheetImporter() : Importer() {
 
     override val propertyName = "dcg_merchant"
 
-    private val logger = LoggerFactory.getLogger(SpreadsheetImporter::class.java)
+    override val logger = LoggerFactory.getLogger(SpreadsheetImporter::class.java)
 
     private val jsonFactory = GsonFactory.getDefaultInstance()
 

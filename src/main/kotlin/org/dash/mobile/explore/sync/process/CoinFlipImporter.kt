@@ -13,9 +13,9 @@ private const val BASE_URL = "https://storerocket.io/api/user/56wpZAy8An/"
 /**
  * Import data from CoinFlip API
  */
-class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer {
+class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer() {
 
-    private val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
+    override val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
 
     override val propertyName = "atm"
 
