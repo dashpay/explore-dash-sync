@@ -203,8 +203,8 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
     }
 
     private fun merchantType(inData: JsonObject): JsonElement {
-        val isPhysical = inData.getAsJsonPrimitive("IsPhysical").isBoolean
-        val isOnline = inData.getAsJsonPrimitive("IsOnline").isBoolean
+        val isPhysical = inData.getAsJsonPrimitive("IsPhysical").asBoolean
+        val isOnline = inData.getAsJsonPrimitive("IsOnline").asBoolean
         return when {
             isPhysical && isOnline -> JsonPrimitive("both")
             isPhysical -> JsonPrimitive("physical")
