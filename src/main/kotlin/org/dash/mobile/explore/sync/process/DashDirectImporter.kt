@@ -126,7 +126,10 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
                             merchant.locations.forEach { location ->
                                 if (location.asJsonObject.get("IsActive").asBoolean) {
                                     val outData = mapData(merchant.merchant, location.asJsonObject)
-                                    result.add(outData)
+
+                                    if (isValidLocation(outData)) {
+                                        result.add(outData)
+                                    }
                                 }
                             }
                         }
@@ -209,7 +212,38 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
             isPhysical && isOnline -> JsonPrimitive("both")
             isPhysical -> JsonPrimitive("physical")
             isOnline -> JsonPrimitive("online")
-            else -> JsonNull.INSTANCE
+            else -> {
+                logger.error("Merchant has invalid type:\n${inData}")
+                JsonNull.INSTANCE
+            }
         }
+    }
+
+    private fun isValidLocation(merchantRecord: JsonObject): Boolean {
+        val typeObject = merchantRecord.get("type")
+
+        if (typeObject.isJsonNull) {
+            return false
+        }
+
+        val type = typeObject.asJsonPrimitive.asString
+
+        if (type == "online") {
+            return true
+        }
+
+        val address1Object = merchantRecord.get("address1")
+        val isAddress1Empty = address1Object.isJsonNull || address1Object.asJsonPrimitive.asString.isNullOrEmpty()
+
+        val address2Object = merchantRecord.get("address2")
+        val isAddress2Empty = address2Object.isJsonNull || address2Object.asJsonPrimitive.asString.isNullOrEmpty()
+
+        val latitude = merchantRecord.get("latitude")
+        val isLatitudeEmpty = latitude.isJsonNull || latitude.asJsonPrimitive.asDouble == 0.0
+
+        val longitude = merchantRecord.get("longitude")
+        val isLongitudeEmpty = longitude.isJsonNull || longitude.asJsonPrimitive.asDouble == 0.0
+
+        return !isAddress1Empty || !isAddress2Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }
 }
