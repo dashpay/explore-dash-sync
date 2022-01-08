@@ -120,12 +120,12 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
                     logger.info("DashDirect.totalRows:\t${responseData.totalRows}")
 
                     responseData.merchants.forEach { merchant ->
-
                         if (merchant.merchant.get("IsActive").asBoolean) {
+                            val totalLocations = merchant.locations.size()
 
                             merchant.locations.forEach { location ->
                                 if (location.asJsonObject.get("IsActive").asBoolean) {
-                                    val outData = mapData(merchant.merchant, location.asJsonObject)
+                                    val outData = mapData(merchant.merchant, location.asJsonObject, totalLocations)
 
                                     if (isValidLocation(outData)) {
                                         result.add(outData)
@@ -165,7 +165,7 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
         }
     }
 
-    private fun mapData(merchant: JsonObject, location: JsonObject): JsonObject {
+    private fun mapData(merchant: JsonObject, location: JsonObject, totalLocations: Int): JsonObject {
         return JsonObject().apply {
             add("source_id", addValidOrDie("Id", location, DataType.NUMBER))
             add("source", JsonPrimitive("DashDirect"))
@@ -184,7 +184,7 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
             add("latitude", addValidOrDie("GpsLat", location, DataType.NUMBER))
             add("longitude", addValidOrDie("GpsLong", location, DataType.NUMBER))
             add("website", addValidOrDie("Website", merchant, DataType.TEXT))
-            add("type", merchantType(merchant))
+            add("type", merchantType(merchant, totalLocations))
             add("deeplink", addValidOrDie("DeepLink", merchant, DataType.TEXT))
 //            add("buy_sell", buySel)
             add("mon_open", addValidOrDie("MondayOpen", location, DataType.TEXT))
@@ -205,12 +205,13 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
         }
     }
 
-    private fun merchantType(inData: JsonObject): JsonElement {
+    private fun merchantType(inData: JsonObject, totalLocations: Int): JsonElement {
         val isPhysical = inData.getAsJsonPrimitive("IsPhysical").asBoolean
         val isOnline = inData.getAsJsonPrimitive("IsOnline").asBoolean
         return when {
             isPhysical && isOnline -> JsonPrimitive("both")
             isPhysical -> JsonPrimitive("physical")
+            isOnline && totalLocations > 1 -> JsonPrimitive("both")
             isOnline -> JsonPrimitive("online")
             else -> {
                 logger.error("Merchant has invalid type:\n${inData}")
