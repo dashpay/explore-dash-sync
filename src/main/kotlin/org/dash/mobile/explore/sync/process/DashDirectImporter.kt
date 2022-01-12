@@ -77,7 +77,7 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
         fun getAllMerchantLocations(@Body requestData: AllMerchantLocationsRequest): Call<AllMerchantLocationsResponse>
     }
 
-    override suspend fun import(save: Boolean): JsonArray {
+    override fun import(save: Boolean): JsonArray {
 
         logger.info("Importing data from DashDirect ($baseUrl")
 

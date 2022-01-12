@@ -8,7 +8,7 @@ abstract class Importer {
     abstract val propertyName: String
     abstract val logger: KLogger
 
-    abstract suspend fun import(save: Boolean): JsonArray
+    abstract fun import(save: Boolean): JsonArray
 
     fun addValidOrDie(inKey: String, inData: JsonObject, type: DashDirectImporter.DataType): JsonElement {
         try {

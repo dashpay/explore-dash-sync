@@ -12,6 +12,9 @@ version = "1.0-SNAPSHOT"
 
 val outputArchive = "${project.name}-${project.version}.jar"
 
+// Required by the 'shadowJar' task
+project.setProperty("mainClassName", "org.dash.mobile.explore.sync.Function")
+
 repositories {
     mavenCentral()
 }
@@ -29,6 +32,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
+    implementation("com.google.cloud.functions:functions-framework-api:1.0.1")
+
     testImplementation(kotlin("test-junit"))
 }
 
@@ -44,7 +49,7 @@ tasks.withType<ShadowJar> {
     manifest.attributes.apply {
         put("Implementation-Title", "Dash Explore Sync")
         put("Implementation-Version", project.version)
-        put("Main-Class", "org.dash.mobile.explore.sync.MainKt")
+        put("Main-Class", "org.dash.mobile.explore.sync.Function")
     }
     archiveFileName.set(outputArchive)
     archiveClassifier.set("")
@@ -61,6 +66,6 @@ tasks {
     }
 }
 
-//application {
-//    mainClassName = "org.dash.mobile.explore.sync.MainKt"
-//}
+application {
+    mainClass.set("org.dash.mobile.explore.sync.MainAppKt")
+}

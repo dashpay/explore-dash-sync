@@ -28,7 +28,7 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
         fun getLocations(): Call<Response>
     }
 
-    override suspend fun import(save: Boolean): JsonArray {
+    override fun import(save: Boolean): JsonArray {
 
         logger.info("Importing data from CoinFlip")
 

@@ -15,7 +15,6 @@ import mu.KotlinLogging
 import java.io.FileNotFoundException
 import java.io.IOException
 
-
 private const val APPLICATION_NAME = "Explore Dash Sync"
 private const val CREDENTIALS_FILE_PATH = "credentials.json"
 private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
@@ -31,11 +30,22 @@ class SpreadsheetImporter : Importer() {
 
     private val jsonFactory = GsonFactory.getDefaultInstance()
 
-    override suspend fun import(save: Boolean): JsonArray {
+    @Throws(IOException::class)
+    override fun import(save: Boolean): JsonArray {
+
+        // Load Service user credentials
+        val resourceStream = javaClass.classLoader.getResourceAsStream(CREDENTIALS_FILE_PATH)
+            ?: throw FileNotFoundException(
+                "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
+                        "You can download it from https://console.cloud.google.com/apis/credentials"
+            )
+        val credentials = GoogleCredentials.fromStream(resourceStream)
+            .createScoped(SheetsScopes.SPREADSHEETS_READONLY)
+        credentials.refreshIfExpired()
 
         // Build a new authorized API client service.
         val httpTransport = GoogleNetHttpTransport.newTrustedTransport()
-        val service = Sheets.Builder(httpTransport, jsonFactory, getCredentials())
+        val service = Sheets.Builder(httpTransport, jsonFactory, HttpCredentialsAdapter(credentials))
             .setApplicationName(APPLICATION_NAME)
             .build()
 
@@ -100,36 +110,19 @@ class SpreadsheetImporter : Importer() {
             cellData.userEnteredValue?.boolValue != null -> JsonPrimitive(cellData.userEnteredValue.boolValue)
             cellData.userEnteredValue?.numberValue != null -> {
                 val type = cellData.effectiveFormat?.numberFormat?.type
-                if (type.equals("NUMBER")) {
-                    JsonPrimitive(cellData.userEnteredValue.numberValue)
-                } else if (type.equals("TIME")) {
-                    JsonPrimitive(cellData.formattedValue.toLowerCase())
-                } else {
-                    JsonPrimitive(cellData.formattedValue)
+                when {
+                    type.equals("NUMBER") -> {
+                        JsonPrimitive(cellData.userEnteredValue.numberValue)
+                    }
+                    type.equals("TIME") -> {
+                        JsonPrimitive(cellData.formattedValue.toLowerCase())
+                    }
+                    else -> {
+                        JsonPrimitive(cellData.formattedValue)
+                    }
                 }
             }
             else -> JsonPrimitive(cellData.formattedValue)
         }
-    }
-
-    /**
-     * Creates an authorized Credential object.
-     *
-     * @param HTTP_TRANSPORT The network HTTP Transport.
-     * @return An authorized Credential object.
-     * @throws IOException If the credentials.json file cannot be found.
-     */
-    @Throws(IOException::class)
-    private fun getCredentials(): HttpCredentialsAdapter {
-        // Load client secrets.
-        val resourceStream = javaClass.classLoader.getResourceAsStream(CREDENTIALS_FILE_PATH)
-            ?: throw FileNotFoundException(
-                "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
-                        "You can download it from https://console.cloud.google.com/apis/credentials"
-            )
-        val credentials = GoogleCredentials.fromStream(resourceStream)
-            .createScoped(SheetsScopes.SPREADSHEETS_READONLY)
-        credentials.refreshIfExpired()
-        return HttpCredentialsAdapter(credentials)
     }
 }
