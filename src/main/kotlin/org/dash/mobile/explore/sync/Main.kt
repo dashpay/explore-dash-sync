@@ -5,11 +5,10 @@ import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import kotlinx.coroutines.*
 import kotlinx.coroutines.runBlocking
-import org.apache.log4j.PropertyConfigurator
+import mu.KotlinLogging
 import org.dash.mobile.explore.sync.process.CoinFlipImporter
 import org.dash.mobile.explore.sync.process.DashDirectImporter
 import org.dash.mobile.explore.sync.process.SpreadsheetImporter
-import org.slf4j.LoggerFactory
 import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -18,7 +17,7 @@ import java.util.*
 import kotlin.system.exitProcess
 
 
-private val logger = LoggerFactory.getLogger("org.dash.mobile.explore.sync.main")
+private val logger = KotlinLogging.logger {}
 
 lateinit var usStatesAbbrMap: Map<String?, String?>
 
@@ -42,8 +41,6 @@ private fun fixStatName(inState: JsonElement) = if (inState.isJsonNull || inStat
 }
 
 fun main(args: Array<String>) = runBlocking {
-
-    PropertyConfigurator.configure(javaClass.classLoader.getResourceAsStream("log4j.properties"))
 
     val gsonReader = Gson()
     val type = object : TypeToken<Map<String?, String?>?>() {}.type
@@ -83,8 +80,6 @@ fun main(args: Array<String>) = runBlocking {
         val data = JsonObject().apply {
             add("explore", explore)
         }
-
-//        logger.debug(data.toString())
 
         val outFileName = if (devMode) "dash-wallet-firebase-dev.json" else "dash-wallet-firebase-prod.json"
         OutputStreamWriter(FileOutputStream(outFileName), StandardCharsets.UTF_8).use { writer ->

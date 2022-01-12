@@ -1,7 +1,7 @@
 package org.dash.mobile.explore.sync.process
 
 import com.google.gson.*
-import org.slf4j.LoggerFactory
+import mu.KotlinLogging
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -15,7 +15,7 @@ private const val BASE_URL = "https://storerocket.io/api/user/56wpZAy8An/"
  */
 class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer() {
 
-    override val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
+    override val logger = KotlinLogging.logger {}
 
     override val propertyName = "atm"
 

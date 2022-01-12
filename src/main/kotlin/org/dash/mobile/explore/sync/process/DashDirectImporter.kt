@@ -2,8 +2,8 @@ package org.dash.mobile.explore.sync.process
 
 import com.google.gson.*
 import com.google.gson.annotations.SerializedName
+import mu.KotlinLogging
 import okhttp3.OkHttpClient
-import org.slf4j.LoggerFactory
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -25,7 +25,7 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
 
     override val propertyName = "dash_direct"
 
-    override val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)
+    override val logger = KotlinLogging.logger {}
 
     private val baseUrl by lazy {
         if (devApi) {

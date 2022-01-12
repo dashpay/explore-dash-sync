@@ -1,12 +1,12 @@
 package org.dash.mobile.explore.sync.process
 
 import com.google.gson.*
-import org.slf4j.Logger
+import mu.KLogger
 
 abstract class Importer {
 
     abstract val propertyName: String
-    abstract val logger: Logger
+    abstract val logger: KLogger
 
     abstract suspend fun import(save: Boolean): JsonArray
 
