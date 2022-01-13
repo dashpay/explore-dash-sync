@@ -1,31 +1,31 @@
 package org.dash.mobile.explore.sync
 
-import com.google.gson.*
-import kotlinx.coroutines.*
-import kotlinx.coroutines.runBlocking
-import mu.KotlinLogging
-import java.util.*
 import kotlin.system.exitProcess
 
-private val logger = KotlinLogging.logger {}
+const val DEV_MODE_ARG = "-dev"
+const val UPLOAD_ARG = "-upload"
 
-fun main(args: Array<String>) = runBlocking {
+fun main(args: Array<String>) {
 
-    if (args.isNotEmpty() && args[0] != "-dev") {
-        logger.info("Invalid parameter ${args[0]} do you mean -dev?")
-        exitProcess(0)
+    val validParams = setOf(UPLOAD_ARG, DEV_MODE_ARG)
+
+    var upload = false
+    var srcDev = false
+    if (args.isNotEmpty()) {
+        for (arg in args) {
+            if (!validParams.contains(arg)) {
+                println("Invalid argument $arg, use one of")
+                println("$UPLOAD_ARG - force upload data to GC Storage")
+                println("$DEV_MODE_ARG - load data from dev servers")
+                exitProcess(1)
+            }
+        }
+        upload = args.contains(UPLOAD_ARG)
+        srcDev = args.contains(DEV_MODE_ARG)
     }
 
-    val devMode = args.isNotEmpty() && args[0] == "-dev"
-    if (devMode) {
-        logger.info("DEV mode activated")
-    }
+    SyncProcessor(OUTPUT_FILE)
+        .syncData(true, upload, srcDev)
 
-    launch(Dispatchers.IO) {
-
-        SyncProcessor().syncData(devMode)
-
-        exitProcess(0)
-    }
-    return@runBlocking
+    exitProcess(0)
 }

@@ -7,16 +7,14 @@ import com.google.api.services.sheets.v4.SheetsScopes
 import com.google.api.services.sheets.v4.model.CellData
 import com.google.auth.http.HttpCredentialsAdapter
 import com.google.auth.oauth2.GoogleCredentials
-import com.google.gson.JsonArray
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
-import com.google.gson.JsonPrimitive
-import mu.KotlinLogging
+import org.dash.mobile.explore.sync.notice
+import org.dash.wallet.features.exploredash.data.model.Protos
+import org.slf4j.LoggerFactory
 import java.io.FileNotFoundException
 import java.io.IOException
 
 private const val APPLICATION_NAME = "Explore Dash Sync"
-private const val CREDENTIALS_FILE_PATH = "credentials.json"
+const val CREDENTIALS_FILE_PATH = "dash-wallet-firebase-3dcb5c05f13e.json"
 private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
 
 /**
@@ -24,14 +22,16 @@ private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
 class SpreadsheetImporter : Importer() {
 
-    override val propertyName = "dcg_merchant"
+    override val logger = LoggerFactory.getLogger(SpreadsheetImporter::class.java)!!
 
-    override val logger = KotlinLogging.logger {}
+    override val propertyName = "dcg_merchant"
 
     private val jsonFactory = GsonFactory.getDefaultInstance()
 
     @Throws(IOException::class)
-    override fun import(save: Boolean): JsonArray {
+    override fun import(): List<Protos.MerchantData> {
+
+        logger.notice("Importing data from Google Sheet https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA")
 
         // Load Service user credentials
         val resourceStream = javaClass.classLoader.getResourceAsStream(CREDENTIALS_FILE_PATH)
@@ -57,72 +57,152 @@ class SpreadsheetImporter : Importer() {
         val sheet = spreadsheet.sheets[sheetIndex]
         val gridData = sheet.data[0]
 
-        logger.info("Importing data from Google Sheet https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA")
+        val headers = mutableListOf<String>()
+        val result = mutableListOf<Protos.MerchantData>()
 
-        val titles = mutableListOf<String>()
-        val result = JsonArray()
         for (rowIndex in gridData.rowData.indices) {
             val rowData = gridData.rowData[rowIndex].getValues()
-            val jsonObject = JsonObject()
-            var emptyRow: Boolean
             if (rowIndex == 0) {
                 for (cellData in rowData) {
                     cellData.formattedValue?.also {
-                        titles.add(it.toLowerCase())
+                        headers.add(it)
                     } ?: break
                 }
-                logger.info("num of cols ${titles.size}")
+                logger.info("num of cols ${headers.size}")
                 continue
             } else {
-                emptyRow = true
-                for (colIndex in titles.indices) {
-                    val title = titles[colIndex]
-                    if (colIndex >= rowData.size) {
-                        jsonObject.add(title, null)
-                        break
-                    }
-                    val cellData = rowData[colIndex]
-                    val jsonElement = convertToJsonElement(cellData)
-
-                    if (jsonElement != null) {
-                        emptyRow = false
-                    }
-
-                    jsonObject.add(title, jsonElement)
+                val merchant = convert(rowData)
+                if (merchant != null) {
+                    result.add(merchant)
+                } else {
+                    logger.info("num of rows ${rowIndex - 1}")
+                    break
                 }
-                jsonObject.add("source", JsonPrimitive("DCG"))
             }
-            if (emptyRow) {
-                logger.info("num of rows ${rowIndex - 1}")
-                break
-            }
-            result.add(jsonObject)
         }
-
-        logger.info("Google Sheet - imported ${result.size()} records")
-
+        logger.notice("Google Sheet - imported ${result.size} records")
         return result
     }
 
-    private fun convertToJsonElement(cellData: CellData): JsonElement? {
+    private fun convert(rowData: List<CellData>): Protos.MerchantData? {
+        var emptyRow = true
+        for (cell in rowData) {
+            if (!cell.formattedValue.isNullOrEmpty()) {
+                emptyRow = false
+                break
+            }
+        }
+        if (emptyRow) {
+            return null
+        }
+
+        return Protos.MerchantData.newBuilder().apply {
+            source = "DCG"
+            convert<Int?>(rowData, ColHeader.SOURCE_ID)?.apply { sourceId = this }
+            convert<String?>(rowData, ColHeader.NAME)?.apply { name = this }
+            convert<String?>(rowData, ColHeader.ADDRESS1)?.apply { address1 = this }
+            convert<String?>(rowData, ColHeader.ADDRESS2)?.apply { address2 = this }
+            convert<String?>(rowData, ColHeader.ADDRESS3)?.apply { address3 = this }
+            convert<String?>(rowData, ColHeader.ADDRESS4)?.apply { address4 = this }
+            convert<Double?>(rowData, ColHeader.LATITUDE)?.apply { latitude = this }
+            convert<Double?>(rowData, ColHeader.LONGITUDE)?.apply { longitude = this }
+            convert<String?>(rowData, ColHeader.PLUS_CODE)?.apply { plusCode = this }
+            convert<String?>(rowData, ColHeader.TERRITORY)?.apply { territory = this }
+            convert<String?>(rowData, ColHeader.GOOGLE_MAPS)?.apply { googleMaps = this }
+            convert<String?>(rowData, ColHeader.LOGO_LOCATION)?.apply { logoLocation = this }
+            convert<String?>(rowData, ColHeader.WEBSITE)?.apply { website = this }
+            convert<String?>(rowData, ColHeader.PAYMENT_METHOD)?.apply { paymentMethod = this }
+            convert<String?>(rowData, ColHeader.TYPE)?.apply { type = this }
+            convert<String?>(rowData, ColHeader.PHONE)?.apply { phone = this }
+            opening = Protos.OpeningHoursData.newBuilder().apply {
+                convert<String?>(rowData, ColHeader.MON_OPEN)?.apply { monOpen = this }
+                convert<String?>(rowData, ColHeader.MON_CLOSE)?.apply { monClose = this }
+                convert<String?>(rowData, ColHeader.TUE_OPEN)?.apply { tueOpen = this }
+                convert<String?>(rowData, ColHeader.TUE_CLOSE)?.apply { tueClose = this }
+                convert<String?>(rowData, ColHeader.WED_OPEN)?.apply { wedOpen = this }
+                convert<String?>(rowData, ColHeader.WED_CLOSE)?.apply { wedClose = this }
+                convert<String?>(rowData, ColHeader.THU_OPEN)?.apply { thuOpen = this }
+                convert<String?>(rowData, ColHeader.THU_CLOSE)?.apply { thuClose = this }
+                convert<String?>(rowData, ColHeader.FRI_OPEN)?.apply { friOpen = this }
+                convert<String?>(rowData, ColHeader.FRI_CLOSE)?.apply { friClose = this }
+                convert<String?>(rowData, ColHeader.SAT_OPEN)?.apply { satOpen = this }
+                convert<String?>(rowData, ColHeader.SAT_CLOSE)?.apply { satClose = this }
+                convert<String?>(rowData, ColHeader.SUN_OPEN)?.apply { sunOpen = this }
+                convert<String?>(rowData, ColHeader.SUN_CLOSE)?.apply { sunClose = this }
+            }.build()
+            convert<String?>(rowData, ColHeader.INSTAGRAM)?.apply { instagram = this }
+            convert<String?>(rowData, ColHeader.TWITTER)?.apply { twitter = this }
+            convert<String?>(rowData, ColHeader.DELIVERY)?.apply { delivery = this }
+            convert<Boolean?>(rowData, ColHeader.ACTIVE)?.apply { active = this }
+            convert<Int>(rowData, ColHeader.MERCHANT_ID)?.apply { merchantId = this.toLong() }
+        }.build()
+    }
+
+    private inline fun <reified T> convert(rowData: List<CellData>, colHeader: ColHeader): T? {
+        val colIndex = colHeader.ordinal
+        val cellData = rowData[colIndex]
         return when {
             cellData.formattedValue == null -> null
-            cellData.userEnteredValue?.boolValue != null -> JsonPrimitive(cellData.userEnteredValue.boolValue)
+            cellData.userEnteredValue?.boolValue != null -> cellData.userEnteredValue.boolValue as T
             cellData.userEnteredValue?.numberValue != null -> {
                 val type = cellData.effectiveFormat?.numberFormat?.type
                 when {
                     type.equals("NUMBER") -> {
-                        JsonPrimitive(cellData.userEnteredValue.numberValue)
+                        if (T::class == Int::class) {
+                            cellData.userEnteredValue.numberValue.toInt() as T
+                        } else {
+                            cellData.userEnteredValue.numberValue as T
+                        }
                     }
                     type.equals("TIME") -> {
-                        JsonPrimitive(cellData.formattedValue.toLowerCase())
+                        cellData.formattedValue.toLowerCase() as T
                     }
                     else -> {
-                        JsonPrimitive(cellData.formattedValue)
+                        cellData.formattedValue as T
                     }
                 }
             }
-            else -> JsonPrimitive(cellData.formattedValue)
+            else -> cellData.formattedValue as T
         }
+    }
+
+    enum class ColHeader {
+        SOURCE_ID,
+        ADD_DATE,
+        UPDATE_DATE,
+        NAME,
+        ADDRESS1,
+        ADDRESS2,
+        ADDRESS3,
+        ADDRESS4,
+        LATITUDE,
+        LONGITUDE,
+        PLUS_CODE,
+        TERRITORY,
+        GOOGLE_MAPS,
+        LOGO_LOCATION,
+        WEBSITE,
+        PAYMENT_METHOD,
+        TYPE,
+        PHONE,
+        MON_OPEN,
+        MON_CLOSE,
+        TUE_OPEN,
+        TUE_CLOSE,
+        WED_OPEN,
+        WED_CLOSE,
+        THU_OPEN,
+        THU_CLOSE,
+        FRI_OPEN,
+        FRI_CLOSE,
+        SAT_OPEN,
+        SAT_CLOSE,
+        SUN_OPEN,
+        SUN_CLOSE,
+        INSTAGRAM,
+        TWITTER,
+        DELIVERY,
+        ACTIVE,
+        MERCHANT_ID
     }
 }

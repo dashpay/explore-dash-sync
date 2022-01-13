@@ -1,21 +1,29 @@
 package org.dash.mobile.explore.sync.process
 
-import com.google.gson.*
-import mu.KotlinLogging
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import org.dash.mobile.explore.sync.notice
+import org.dash.wallet.features.exploredash.data.model.Protos
+import org.slf4j.LoggerFactory
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import java.io.IOException
 
+private val JsonElement.asStringOrNull: String?
+    get() = if (isJsonPrimitive) asString else null
+
 private const val BASE_URL = "https://storerocket.io/api/user/56wpZAy8An/"
 
 /**
  * Import data from CoinFlip API
  */
-class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonElement) : Importer() {
+class CoinFlipImporter : Importer() {
 
-    override val logger = KotlinLogging.logger {}
+    override val logger = LoggerFactory.getLogger(CoinFlipImporter::class.java)!!
 
     override val propertyName = "atm"
 
@@ -28,9 +36,9 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
         fun getLocations(): Call<Response>
     }
 
-    override fun import(save: Boolean): JsonArray {
+    override fun import(): List<Protos.AtmData> {
 
-        logger.info("Importing data from CoinFlip")
+        logger.notice("Importing data from CoinFlip")
 
         val gson = GsonBuilder()
             .setDateFormat("yyyy-MM-dd'T'HH:mm:ssZ")
@@ -45,17 +53,17 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
         val locations = apiService.getLocations()
 
         try {
-            val result = JsonArray()
+            val result = mutableListOf<Protos.AtmData>()
             val response = locations.execute()
             if (response.isSuccessful) {
                 val responseData = response.body()
 
                 responseData?.results?.locations?.forEach { location ->
-                    val outData = mapData(location.asJsonObject)
+                    val outData = buildMerchant(location.asJsonObject)
                     result.add(outData)
                 }
 
-                logger.info("CoinFlip - imported ${result.size()} records")
+                logger.notice("CoinFlip - imported ${result.size} records")
 
                 return result
             } else {
@@ -65,59 +73,68 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
             logger.error(ex.message, ex)
         }
 
-        return JsonArray()
+        return listOf()
     }
 
-    private fun mapData(inData: JsonObject): JsonObject {
-        return JsonObject().apply {
-            add("source_id", inData.get("id"))
-            add("source", JsonPrimitive("CoinFlip"))
-            add("name", inData.get("name"))
-            add("address1", inData.get("address"))
-            add("city", inData.get("city"))
+    private fun buildMerchant(inData: JsonObject): Protos.AtmData {
+        return Protos.AtmData.newBuilder().apply {
+            source = "CoinFlip"
+            convert<Int?>("id", inData)?.apply { sourceId = this }
+            convert<String?>("name", inData)?.apply { name = this }
+            convert<String?>("address", inData)?.apply { address = this }
+            convert<String?>("city", inData)?.apply { city = this }
             val inState = inData.get("state")
-            val outState = fixStatName(inState)
-            add("territory", outState)
-            add("postcode", inData.get("postcode"))
-            add("phone", inData.get("phone"))
-            add(
-                "logo_location",
-                JsonPrimitive("https://drive.google.com/uc?export=view&id=1C2aOHIUAawrfTp3vvUktXERXF_wNz8QQ")
-            )
-            add("cover_image", inData.get("cover_image"))
-            val latJson = inData.get("lat")
-            val lat = if (latJson.isJsonNull) JsonNull.INSTANCE else JsonPrimitive(latJson.asString.toFloat())
-            add("latitude", lat)
-            val lngJson = inData.get("lng")
-            val lng = if (lngJson.isJsonNull) JsonNull.INSTANCE else JsonPrimitive(lngJson.asString.toFloat())
-            add("longitude", lng)
-            add(
-                "website",
-                JsonPrimitive("https://coinflip.tech/bitcoin-atm?location=${inData.get("slug").asString}")
-            )
+            fixStatName(inState)?.apply { territory = this }
+            convert<String?>("postcode", inData)?.apply { postcode = this }
+            convert<String?>("phone", inData)?.apply { phone = this }
+            logoLocation = "https://drive.google.com/uc?export=view&id=1C2aOHIUAawrfTp3vvUktXERXF_wNz8QQ"
+            convert<String?>("cover_image", inData)?.apply { coverImage = this }
+            convert<String?>("lat", inData)?.apply { latitude = this.toDouble() }
+            convert<String?>("lng", inData)?.apply { longitude = this.toDouble() }
+            website = "https://coinflip.tech/bitcoin-atm?location=${inData.get("slug").asString}"
             val filters = inData.getAsJsonArray("filters").asJsonArray
-            val buySel = if (filters.size() > 0) {
-                filters[0].asJsonObject.get("name")
-            } else {
-                JsonNull.INSTANCE
+            if (filters.size() > 0) {
+                convert<String?>("name", filters[0].asJsonObject)?.apply { type = this }
             }
-            add("buy_sell", buySel)
+            convert<String?>("instagram", inData)?.apply { instagram = this }
+            convert<String?>("twitter", inData)?.apply { twitter = this }
 
-            addDay(inData, this, "mon")
-            addDay(inData, this, "tue")
-            addDay(inData, this, "wed")
-            addDay(inData, this, "thu")
-            addDay(inData, this, "fri")
-            addDay(inData, this, "sat")
-            addDay(inData, this, "sun")
+            opening = Protos.OpeningHoursData.newBuilder().apply {
 
-            add("instagram", inData.get("instagram"))
-            add("twitter", inData.get("twitter"))
-            add("manufacturer", JsonPrimitive("coinflip"))
-        }
+                val mon = getDay(inData, "mon")
+                mon.first?.apply { monOpen = this }
+                mon.second?.apply { monClose = this }
+
+                val tue = getDay(inData, "tue")
+                tue.first?.apply { tueOpen = this }
+                tue.second?.apply { tueClose = this }
+
+                val wed = getDay(inData, "wed")
+                wed.first?.apply { wedOpen = this }
+                wed.second?.apply { wedClose = this }
+
+                val thu = getDay(inData, "thu")
+                thu.first?.apply { thuOpen = this }
+                thu.second?.apply { thuClose = this }
+
+                val fri = getDay(inData, "fri")
+                fri.first?.apply { friOpen = this }
+                fri.second?.apply { friClose = this }
+
+                val sat = getDay(inData, "sat")
+                sat.first?.apply { satOpen = this }
+                sat.second?.apply { satClose = this }
+
+                val sun = getDay(inData, "sun")
+                sun.first?.apply { sunOpen = this }
+                sun.second?.apply { sunClose = this }
+            }.build()
+
+            manufacturer = "coinflip"
+        }.build()
     }
 
-    private fun addDay(inData: JsonObject, outData: JsonObject, day: String) {
+    private fun getDay(inData: JsonObject, day: String): Pair<String?, String?> {
         /* e.g.
          * "mon":"9:00 am - 10:00 pm",
          * "mon":"24 Hours",
@@ -126,9 +143,8 @@ class CoinFlipImporter(private val fixStatName: (inState: JsonElement) -> JsonEl
         val dayOpenClose = inData.get(day).run {
             if (isJsonPrimitive) asString?.split(" - ") else null
         }
-        val dayOpen = dayOpenClose?.run { JsonPrimitive(first()) } ?: JsonNull.INSTANCE
-        val dayClose = dayOpenClose?.run { JsonPrimitive(last()) } ?: JsonNull.INSTANCE
-        outData.add("${day}_open", dayOpen)
-        outData.add("${day}_close", dayClose)
+        val dayOpen = dayOpenClose?.run { first() }
+        val dayClose = dayOpenClose?.run { last() }
+        return Pair(dayOpen, dayClose)
     }
 }

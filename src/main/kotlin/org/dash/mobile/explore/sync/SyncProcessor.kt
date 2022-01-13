@@ -1,77 +1,179 @@
 package org.dash.mobile.explore.sync
 
-import com.google.gson.*
-import com.google.gson.reflect.TypeToken
-import com.google.gson.stream.JsonReader
-import mu.KotlinLogging
+import com.google.auth.oauth2.GoogleCredentials
+import com.google.cloud.storage.BlobId
+import com.google.cloud.storage.BlobInfo
+import com.google.cloud.storage.Storage
+import com.google.cloud.storage.StorageOptions
+import com.google.protobuf.Int32Value
+import net.lingala.zip4j.io.outputstream.ZipOutputStream
 import org.dash.mobile.explore.sync.process.CoinFlipImporter
-import org.dash.mobile.explore.sync.process.DashDirectImporter
 import org.dash.mobile.explore.sync.process.SpreadsheetImporter
-import java.io.FileOutputStream
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.nio.charset.StandardCharsets
-import java.util.*
+import org.dash.wallet.features.exploredash.data.model.Protos
+import org.slf4j.LoggerFactory
+import java.io.*
+import java.util.zip.CRC32
+import java.util.zip.CheckedOutputStream
+import net.lingala.zip4j.model.ZipParameters
+import net.lingala.zip4j.model.enums.CompressionLevel
+import net.lingala.zip4j.model.enums.EncryptionMethod
+import org.dash.mobile.explore.sync.process.CREDENTIALS_FILE_PATH
+
+import java.io.IOException
 
 
-private val logger = KotlinLogging.logger {}
+const val GC_PROJECT_ID = "dash-wallet-firebase"
+const val GCS_BUCKET_NAME = "explore-dash-sync"
+const val OUTPUT_FILE = "explore.dat"
 
-class SyncProcessor {
+const val CHECKSUM_META_KEY = "Data-Checksum"
 
-    lateinit var usStatesAbbrMap: Map<String?, String?>
+class SyncProcessor(val archivePath: String) {
 
-    // replace state abbr and modified name with the classified one
-    // e.g.
-    // "AL" -> "Alabama"
-    // " Hawaii" -> "Hawaii"
-    // "New,Hampshire " -> "New Hampshire"
-    // etc.
-    private fun fixStatName(inState: JsonElement) = if (inState.isJsonNull || inState.asString.isEmpty()) {
-        JsonNull.INSTANCE
-    } else {
-        // replace state abbr with the full name e.g. AL -> Alabama, etc.
-        val inStateStr = inState.asString.replace(',', ' ').trim()
-        val state = usStatesAbbrMap[inStateStr]
-        if (state != null) {
-            JsonPrimitive(state)
+    private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
+
+    fun syncData(forceArchive: Boolean, upload: Boolean, srcDev: Boolean) {
+
+        logger.notice("Sync started")
+
+        ByteArrayOutputStream().use { buffer ->
+            CheckedOutputStream(buffer, CRC32()).use { dataBuffer ->
+
+                val dataVersionP = Int32Value.newBuilder().setValue(1).build()
+                dataVersionP.writeDelimitedTo(dataBuffer)
+
+                val atmData = CoinFlipImporter().import()
+                val atmDataSize = Int32Value.newBuilder().setValue(atmData.size).build()
+                atmDataSize.writeDelimitedTo(dataBuffer)
+                logger.info("CoinFlip data size ${atmDataSize.value}")
+                for (item in atmData) {
+                    item.writeDelimitedTo(dataBuffer)
+                }
+
+                val merchantData = mutableListOf<Protos.MerchantData>()
+
+                val spreadsheetData = SpreadsheetImporter().import()
+                logger.info("Spreadsheet data size ${spreadsheetData.size}")
+                merchantData.addAll(spreadsheetData)
+
+//                val dashDirectData = DashDirectImporter(srcDev).import()
+//                logger.info("DashDirect data size ${dashDirectData.size}")
+//                merchantData.addAll(dashDirectData)
+
+                val merchantDataSize = Int32Value.newBuilder().setValue(merchantData.size).build()
+                merchantDataSize.writeDelimitedTo(dataBuffer)
+                logger.info("Merchant data size ${merchantDataSize.value}")
+
+                for (item in merchantData) {
+                    item.writeDelimitedTo(dataBuffer)
+                }
+
+                val checksum = dataBuffer.checksum.value
+                logger.info("Data checksum $checksum")
+
+                process(forceArchive, upload, checksum, buffer)
+            }
+        }
+
+//        FileInputStream("./exploredata.bin").use { inFile ->
+//            val updateDate = Int64Value.parseDelimitedFrom(inFile)
+//            val dataSize = Int32Value.parseDelimitedFrom(inFile)
+//            println("updateDate $updateDate, dataSize $dataSize")
+//            var count = 0
+//            var merchant: Protos.MerchantData?
+//            while (Protos.MerchantData.parseDelimitedFrom(inFile).also { merchant = it } != null) {
+////                println("count: $count")
+//                count++
+//            }
+//            println("count: $count")
+//        }
+
+        logger.notice("Sync finished")
+    }
+
+    private fun process(
+        forceArchive: Boolean,
+        upload: Boolean,
+        newDataChecksum: Long,
+        dataBuffer: ByteArrayOutputStream
+    ) {
+//        val inFile = ZipFile("./exploredata.zip")
+//        if (inFile.file.exists() && inFile.comment == newDataChecksum.toString()) {
+//            logger.info("No changes, updating canceled")
+//        } else {
+//            logger.info("Data has changed, updating file")
+//        }
+        val gcStorage = createStorage()
+        val existingDataChecksum =
+            gcStorage.get(GCS_BUCKET_NAME)?.get(OUTPUT_FILE)?.metadata?.get(CHECKSUM_META_KEY)
+        val newDataChecksumHex = newDataChecksum.toString(16)
+
+        val dataChanged = existingDataChecksum != newDataChecksumHex
+
+        if (dataChanged || forceArchive) {
+
+            if (!forceArchive) {
+                logger.notice("Data has changed ($existingDataChecksum vs $newDataChecksumHex), updating")
+            }
+
+            val dataFile = File(archivePath)
+            val password = newDataChecksumHex.hashCode().toString().reversed()
+            saveArchive(newDataChecksum, dataBuffer, dataFile, password.toCharArray())
+
+            if (upload) {
+                uploadObject(gcStorage, GCS_BUCKET_NAME, dataFile, newDataChecksum)
+            }
         } else {
-            JsonPrimitive(inStateStr)
+            logger.notice("No changes were detected nor force upload activated, updating canceled")
         }
     }
 
-    fun syncData(devMode: Boolean) {
-
-        val gsonReader = Gson()
-        val type = object : TypeToken<Map<String?, String?>?>() {}.type
-        val statesJson = JsonReader(InputStreamReader(javaClass.classLoader.getResourceAsStream("states_hash.json")!!))
-        usStatesAbbrMap = gsonReader.fromJson(statesJson, type) as Map<String?, String?>
-
-        val importers = listOf(
-            SpreadsheetImporter(),
-            CoinFlipImporter(::fixStatName),
-            DashDirectImporter(devMode, ::fixStatName)
-        )
-
-        val explore = JsonObject()
-        val timestamp = JsonPrimitive(Date().time)
-        explore.add("last_update", timestamp)
-        importers.forEach {
-            val entry = JsonObject()
-            entry.add("last_update", timestamp)
-            val data = it.import(true)
-            entry.add("data_size", JsonPrimitive(data.size()))
-            entry.add("data", data)
-            explore.add(it.propertyName, entry)
+    @Throws(IOException::class)
+    private fun saveArchive(
+        checksum: Long,
+        dataBuffer: ByteArrayOutputStream,
+        outFile: File,
+        password: CharArray
+    ) {
+        logger.info("Saving data to $outFile")
+        val zipParameters = ZipParameters()
+        zipParameters.isEncryptFiles = true
+        zipParameters.encryptionMethod = EncryptionMethod.AES
+        zipParameters.compressionLevel = CompressionLevel.NORMAL
+        ZipOutputStream(FileOutputStream(outFile), password).use { outStream ->
+            zipParameters.fileNameInZip = "${outFile.nameWithoutExtension}.bin"
+            outStream.putNextEntry(zipParameters)
+            dataBuffer.writeTo(outStream)
+            outStream.setComment(checksum.toString())
         }
+        logger.info("Data saved $outFile.")
+    }
 
-        val data = JsonObject().apply {
-            add("explore", explore)
-        }
+    @Throws(IOException::class)
+    fun uploadObject(storage: Storage, bucketName: String, dataFile: File, checksum: Long) {
+        logger.info("Uploading data to GC Storage")
+        val objectName = dataFile.name
+        val blobId = BlobId.of(bucketName, objectName)
+        val blobInfo = BlobInfo.newBuilder(blobId)
+            .setMetadata(mapOf(CHECKSUM_META_KEY to checksum.toString(16)))
+            .build()
+        storage.create(blobInfo, dataFile.readBytes())
+        logger.info("File $dataFile uploaded to bucket $bucketName as $objectName")
+    }
 
-//        val outFileName = if (devMode) "dash-wallet-firebase-dev.json" else "dash-wallet-firebase-prod.json"
-//        OutputStreamWriter(FileOutputStream(outFileName), StandardCharsets.UTF_8).use { writer ->
-//            val gson = GsonBuilder().create()
-//            gson.toJson(data, writer)
-//        }
+    private fun createStorage(): Storage {
+        val serviceAccount =
+            javaClass.classLoader.getResourceAsStream("dash-wallet-firebase-3dcb5c05f13e.json")
+                ?: throw FileNotFoundException(
+                    "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
+                            "You can download it from https://console.cloud.google.com/apis/credentials"
+                )
+
+        val credentials = GoogleCredentials.fromStream(serviceAccount)
+//            .createScoped(arrayListOf("https://www.googleapis.com/auth/cloud-platform"))
+        return StorageOptions.newBuilder()
+            .setProjectId(GC_PROJECT_ID)
+            .setCredentials(credentials)
+            .build().service
     }
 }

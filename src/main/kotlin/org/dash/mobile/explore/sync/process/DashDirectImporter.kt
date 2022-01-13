@@ -2,8 +2,10 @@ package org.dash.mobile.explore.sync.process
 
 import com.google.gson.*
 import com.google.gson.annotations.SerializedName
-import mu.KotlinLogging
 import okhttp3.OkHttpClient
+import org.dash.mobile.explore.sync.notice
+import org.dash.wallet.features.exploredash.data.model.Protos
+import org.slf4j.LoggerFactory
 import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -13,19 +15,18 @@ import retrofit2.http.POST
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-
 private const val BASE_URL = "https://api.dashdirect.org/"
 private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
 
 /**
  * Import data from DashDirect API
  */
-class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (inState: JsonElement) -> JsonElement) :
+class DashDirectImporter(private val devApi: Boolean) :
     Importer() {
 
-    override val propertyName = "dash_direct"
+    override val logger = LoggerFactory.getLogger(DashDirectImporter::class.java)!!
 
-    override val logger = KotlinLogging.logger {}
+    override val propertyName = "dash_direct"
 
     private val baseUrl by lazy {
         if (devApi) {
@@ -77,9 +78,9 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
         fun getAllMerchantLocations(@Body requestData: AllMerchantLocationsRequest): Call<AllMerchantLocationsResponse>
     }
 
-    override fun import(save: Boolean): JsonArray {
+    override fun import(): List<Protos.MerchantData> {
 
-        logger.info("Importing data from DashDirect ($baseUrl")
+        logger.notice("Importing data from DashDirect ($baseUrl)")
 
         val gson = GsonBuilder()
             .setDateFormat("yyyy-MM-dd'T'HH:mm:ssZ")
@@ -99,7 +100,7 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
 
         val apiService = retrofit.create(Endpoint::class.java)
 
-        val result = JsonArray()
+        val result = mutableListOf<Protos.MerchantData>()
         val pageSize = 20000
         var currentPageIndex = 1
         var totalPages = currentPageIndex + 1
@@ -116,8 +117,8 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
                     responseData.merchants.forEach { merchant ->
                         currentRows += merchant.locations.size()
                     }
-                    logger.info("DashDirect\t${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
-                    logger.info("DashDirect.totalRows:\t${responseData.totalRows}")
+                    logger.info("DashDirect ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
+                    logger.info("DashDirect.totalRows: ${responseData.totalRows}")
 
                     responseData.merchants.forEach { merchant ->
                         if (merchant.merchant.get("IsActive").asBoolean) {
@@ -125,7 +126,8 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
 
                             merchant.locations.forEach { location ->
                                 if (location.asJsonObject.get("IsActive").asBoolean) {
-                                    val outData = mapData(merchant.merchant, location.asJsonObject, totalLocations)
+                                    val outData =
+                                        buildMerchant(merchant.merchant, location.asJsonObject, totalLocations)
 
                                     if (isValidLocation(outData)) {
                                         result.add(outData)
@@ -141,109 +143,83 @@ class DashDirectImporter(private val devApi: Boolean, private val fixStatName: (
                 }
             } catch (ex: IOException) {
                 logger.error(ex.message, ex)
-                return JsonArray()
+                return listOf<Protos.MerchantData>()
             }
         }
 
-        logger.info("DashDirect - imported ${result.size()} records")
+        logger.notice("DashDirect - imported ${result.size} records")
 
         return result
     }
 
-    enum class DataType {
-
-        BOOLEAN,
-        NUMBER,
-        TEXT;
-
-        fun isEquivalentTo(data: JsonPrimitive): Boolean {
-            return when (this) {
-                BOOLEAN -> data.isBoolean
-                NUMBER -> data.isNumber
-                TEXT -> data.isString
-            }
-        }
-    }
-
-    private fun mapData(merchant: JsonObject, location: JsonObject, totalLocations: Int): JsonObject {
-        return JsonObject().apply {
-            add("source_id", addValidOrDie("Id", location, DataType.NUMBER))
-            add("source", JsonPrimitive("DashDirect"))
-            add("merchant_id", addValidOrDie("Id", merchant, DataType.NUMBER))
-            add("name", addValidOrDie("LegalName", merchant, DataType.TEXT))
-            add("address1", addValidOrDie("Address1", location, DataType.TEXT))
-            add("address2", addValidOrDie("Address2", location, DataType.TEXT))
-            add("city", addValidOrDie("City", location, DataType.TEXT))
+    private fun buildMerchant(merchant: JsonObject, location: JsonObject, totalLocations: Int): Protos.MerchantData {
+        return Protos.MerchantData.newBuilder().apply {
+            source = "DashDirect"
+            convert<Int?>("Id", location)?.apply { sourceId = this }
+            convert<Long?>("Id", merchant)?.apply { merchantId = this }
+            convert<String?>("LegalName", merchant)?.apply { name = this }
+            convert<String?>("Address1", location)?.apply { address1 = this }
+            convert<String?>("Address2", location)?.apply { address2 = this }
+            convert<String?>("City", location)?.apply { city = this }
             val inState = location.get("State")
-            val outState = fixStatName(inState)
-            add("territory", outState)
-            add("postcode", addValidOrDie("PostalCode", location, DataType.TEXT))
-            add("phone", addValidOrDie("Phone", location, DataType.TEXT))
-            add("logo_location", addValidOrDie("LogoUrl", merchant, DataType.TEXT))
-            add("cover_image", addValidOrDie("CardImageUrl", merchant, DataType.TEXT))
-            add("latitude", addValidOrDie("GpsLat", location, DataType.NUMBER))
-            add("longitude", addValidOrDie("GpsLong", location, DataType.NUMBER))
-            add("website", addValidOrDie("Website", merchant, DataType.TEXT))
-            add("type", merchantType(merchant, totalLocations))
-            add("deeplink", addValidOrDie("DeepLink", merchant, DataType.TEXT))
-//            add("buy_sell", buySel)
-            add("mon_open", addValidOrDie("MondayOpen", location, DataType.TEXT))
-            add("mon_close", addValidOrDie("MondayClose", location, DataType.TEXT))
-            add("tue_open", addValidOrDie("TuesdayOpen", location, DataType.TEXT))
-            add("tue_close", addValidOrDie("TuesdayClose", location, DataType.TEXT))
-            add("wed_open", addValidOrDie("WednesdayOpen", location, DataType.TEXT))
-            add("wed_close", addValidOrDie("WednesdayClose", location, DataType.TEXT))
-            add("thu_open", addValidOrDie("ThursdayOpen", location, DataType.TEXT))
-            add("thu_close", addValidOrDie("ThursdayClose", location, DataType.TEXT))
-            add("fri_open", addValidOrDie("FridayOpen", location, DataType.TEXT))
-            add("fri_close", addValidOrDie("FridayClose", location, DataType.TEXT))
-            add("sat_open", addValidOrDie("SaturdayOpen", location, DataType.TEXT))
-            add("sat_close", addValidOrDie("SaturdayClose", location, DataType.TEXT))
-            add("sun_open", addValidOrDie("SundayOpen", location, DataType.TEXT))
-            add("sun_close", addValidOrDie("SundayClose", location, DataType.TEXT))
-            add("payment_method", JsonPrimitive("gift card"))
-        }
+            fixStatName(inState)?.apply { territory = this }
+            convert<String?>("PostalCode", location)?.apply { postcode = this }
+            convert<String?>("Phone", location)?.apply { phone = this }
+            convert<String?>("LogoUrl", merchant)?.apply { logoLocation = this }
+            convert<String?>("CardImageUrl", merchant)?.apply { coverImage = this }
+            convert<Double?>("GpsLat", location)?.apply { latitude = this }
+            convert<Double?>("GpsLong", location)?.apply { longitude = this }
+            convert<String?>("Website", merchant)?.apply { website = this }
+            merchantType(merchant, totalLocations)?.apply { type = this }
+            convert<String?>("DeepLink", merchant)?.apply { deeplink = this }
+            opening = Protos.OpeningHoursData.newBuilder().apply {
+                convert<String?>("MondayOpen", location)?.apply { monOpen = this }
+                convert<String?>("MondayClose", location)?.apply { monClose = this }
+                convert<String?>("TuesdayOpen", location)?.apply { tueOpen = this }
+                convert<String?>("TuesdayClose", location)?.apply { tueClose = this }
+                convert<String?>("WednesdayOpen", location)?.apply { wedOpen = this }
+                convert<String?>("WednesdayClose", location)?.apply { wedClose = this }
+                convert<String?>("ThursdayOpen", location)?.apply { thuOpen = this }
+                convert<String?>("ThursdayClose", location)?.apply { thuClose = this }
+                convert<String?>("FridayOpen", location)?.apply { friOpen = this }
+                convert<String?>("FridayClose", location)?.apply { friClose = this }
+                convert<String?>("SaturdayOpen", location)?.apply { satOpen = this }
+                convert<String?>("SaturdayClose", location)?.apply { satClose = this }
+                convert<String?>("SundayOpen", location)?.apply { sunOpen = this }
+                convert<String?>("SundayClose", location)?.apply { sunClose = this }
+            }.build()
+            paymentMethod = "gift card"
+        }.build()
     }
 
-    private fun merchantType(inData: JsonObject, totalLocations: Int): JsonElement {
+    private fun merchantType(inData: JsonObject, totalLocations: Int): String? {
         val isPhysical = inData.getAsJsonPrimitive("IsPhysical").asBoolean
         val isOnline = inData.getAsJsonPrimitive("IsOnline").asBoolean
         return when {
-            isPhysical && isOnline -> JsonPrimitive("both")
-            isPhysical -> JsonPrimitive("physical")
-            isOnline && totalLocations > 1 -> JsonPrimitive("both")
-            isOnline -> JsonPrimitive("online")
+            isPhysical && isOnline -> "both"
+            isPhysical -> "physical"
+            isOnline && totalLocations > 1 -> "both"
+            isOnline -> "online"
             else -> {
                 logger.error("Merchant has invalid type:\n${inData}")
-                JsonNull.INSTANCE
+                null
             }
         }
     }
 
-    private fun isValidLocation(merchantRecord: JsonObject): Boolean {
-        val typeObject = merchantRecord.get("type")
+    private fun isValidLocation(merchantRecord: Protos.MerchantData): Boolean {
 
-        if (typeObject.isJsonNull) {
-            return false
-        }
-
-        val type = typeObject.asJsonPrimitive.asString
+        val type = merchantRecord.type ?: return false
 
         if (type == "online") {
             return true
         }
 
-        val address1Object = merchantRecord.get("address1")
-        val isAddress1Empty = address1Object.isJsonNull || address1Object.asJsonPrimitive.asString.isNullOrEmpty()
+        val isAddress1Empty = merchantRecord.address1.isNullOrEmpty()
+        val isAddress2Empty = merchantRecord.address2.isNullOrEmpty()
 
-        val address2Object = merchantRecord.get("address2")
-        val isAddress2Empty = address2Object.isJsonNull || address2Object.asJsonPrimitive.asString.isNullOrEmpty()
-
-        val latitude = merchantRecord.get("latitude")
-        val isLatitudeEmpty = latitude.isJsonNull || latitude.asJsonPrimitive.asDouble == 0.0
-
-        val longitude = merchantRecord.get("longitude")
-        val isLongitudeEmpty = longitude.isJsonNull || longitude.asJsonPrimitive.asDouble == 0.0
+        val isLatitudeEmpty = !merchantRecord.hasLatitude() || merchantRecord.latitude == 0.0
+        val isLongitudeEmpty = !merchantRecord.hasLongitude() || merchantRecord.longitude == 0.0
 
         return !isAddress1Empty || !isAddress2Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }
