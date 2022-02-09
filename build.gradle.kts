@@ -1,11 +1,9 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import com.google.protobuf.gradle.*
 
 plugins {
     kotlin("jvm") version "1.5.30"
     id("com.github.johnrengelman.shadow") version "6.1.0"
-    id("com.google.protobuf") version "0.8.18"
     application
 }
 
@@ -18,10 +16,8 @@ repositories {
     mavenCentral()
 }
 
-
 dependencies {
 
-    implementation("com.google.protobuf:protobuf-javalite:3.14.0")
     implementation("net.lingala.zip4j:zip4j:2.9.1")
 
     implementation("org.slf4j:slf4j-api:1.7.32")
@@ -30,6 +26,7 @@ dependencies {
 
     implementation("com.google.apis:google-api-services-sheets:v4-rev612-1.25.0")
 
+    //implementation("org.jetbrains.kotlin:kotlin-stdlib:1.6.10")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2")
 
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -38,6 +35,8 @@ dependencies {
     implementation("com.google.cloud.functions:functions-framework-api:1.0.1")
 
     implementation("com.google.cloud:google-cloud-storage:2.3.0")
+
+    implementation("org.xerial:sqlite-jdbc:3.36.0.3")
 
     testImplementation(kotlin("test-junit"))
 }
@@ -58,23 +57,6 @@ tasks.withType<ShadowJar> {
     archiveFileName.set(outputArchive)
     archiveClassifier.set("")
     archiveVersion.set("")
-}
-
-//https://github.com/google/protobuf-gradle-plugin/issues/518
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:3.14.0"
-    }
-    generateProtoTasks {
-        ofSourceSet("main").forEach { task ->
-            task.builtins {
-                getByName("java") {
-                    option("lite")
-                }
-            }
-        }
-    }
-    generatedFilesBaseDir = File(projectDir, "/src").toString()
 }
 
 application {
@@ -100,4 +82,3 @@ tasks.register("buildApp") {
         rename { "${rootProject.name}-app.jar" }
     }
 }
-

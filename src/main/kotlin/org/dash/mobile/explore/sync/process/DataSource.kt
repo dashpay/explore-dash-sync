@@ -5,11 +5,15 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
-import com.google.protobuf.GeneratedMessageLite
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.transform
+import org.dash.mobile.explore.sync.process.data.Data
 import org.slf4j.Logger
 import java.io.InputStreamReader
+import java.sql.PreparedStatement
 
-abstract class Importer {
+abstract class DataSource<T> where T : Data {
 
     private val usStatesAbbrMap: Map<String?, String?>
 
@@ -22,11 +26,16 @@ abstract class Importer {
 
     abstract val logger: Logger
 
-    abstract val propertyName: String
+    protected abstract fun getRawData(): Flow<T>
 
-    abstract fun import(): List<GeneratedMessageLite<*, *>>
+    fun getData(statement: PreparedStatement) = getRawData()
+//        .buffer()
+        .transform { data ->
+            data.transferInto(statement)
+            emit(data)
+        }
 
-    inline fun <reified T> convert(inKey: String, inData: JsonObject): T? {
+    inline fun <reified T> convertJsonData(inKey: String, inData: JsonObject): T? {
         return try {
             val data = inData.get(inKey)
             if (data.isJsonNull) {
@@ -49,12 +58,13 @@ abstract class Importer {
         }
     }
 
-    // replace state abbr and modified name with the classified one
-    // e.g.
-    // "AL" -> "Alabama"
-    // " Hawaii" -> "Hawaii"
-    // "New,Hampshire " -> "New Hampshire"
-    // etc.
+    /** replace state abbr and modified name with the classified one
+     * e.g.
+     * "AL" -> "Alabama"
+     * " Hawaii" -> "Hawaii"
+     * "New,Hampshire " -> "New Hampshire"
+     * etc.
+     */
     fun fixStatName(inState: JsonElement) = if (inState.isJsonNull || inState.asString.isEmpty()) {
         null
     } else {

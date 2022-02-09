@@ -7,29 +7,28 @@ import com.google.api.services.sheets.v4.SheetsScopes
 import com.google.api.services.sheets.v4.model.CellData
 import com.google.auth.http.HttpCredentialsAdapter
 import com.google.auth.oauth2.GoogleCredentials
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import org.dash.mobile.explore.sync.notice
-import org.dash.wallet.features.exploredash.data.model.Protos
+import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.slf4j.LoggerFactory
 import java.io.FileNotFoundException
-import java.io.IOException
+import java.util.*
 
 private const val APPLICATION_NAME = "Explore Dash Sync"
-const val CREDENTIALS_FILE_PATH = "dash-wallet-firebase-3dcb5c05f13e.json"
+const val CREDENTIALS_FILE_PATH = "dash-wallet-firebase-619341caf23e.json"
 private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
 
 /**
  * Import data from Google Sheet: https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
-class SpreadsheetImporter : Importer() {
+class DCGDataSource : DataSource<MerchantData>() {
 
-    override val logger = LoggerFactory.getLogger(SpreadsheetImporter::class.java)!!
-
-    override val propertyName = "dcg_merchant"
+    override val logger = LoggerFactory.getLogger(DCGDataSource::class.java)!!
 
     private val jsonFactory = GsonFactory.getDefaultInstance()
 
-    @Throws(IOException::class)
-    override fun import(): List<Protos.MerchantData> {
+    override fun getRawData(): Flow<MerchantData> = flow {
 
         logger.notice("Importing data from Google Sheet https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA")
 
@@ -58,8 +57,8 @@ class SpreadsheetImporter : Importer() {
         val gridData = sheet.data[0]
 
         val headers = mutableListOf<String>()
-        val result = mutableListOf<Protos.MerchantData>()
 
+        var totalRecords = 0
         for (rowIndex in gridData.rowData.indices) {
             val rowData = gridData.rowData[rowIndex].getValues()
             if (rowIndex == 0) {
@@ -68,23 +67,23 @@ class SpreadsheetImporter : Importer() {
                         headers.add(it)
                     } ?: break
                 }
-                logger.info("num of cols ${headers.size}")
+                logger.info("Number of columns ${headers.size}")
                 continue
             } else {
                 val merchant = convert(rowData)
                 if (merchant != null) {
-                    result.add(merchant)
+                    totalRecords++
+                    emit(merchant)
                 } else {
-                    logger.info("num of rows ${rowIndex - 1}")
                     break
                 }
             }
         }
-        logger.notice("Google Sheet - imported ${result.size} records")
-        return result
+        logger.notice("Google Sheet - imported $totalRecords records")
     }
 
-    private fun convert(rowData: List<CellData>): Protos.MerchantData? {
+    private fun convert(rowData: List<CellData>): MerchantData? {
+
         var emptyRow = true
         for (cell in rowData) {
             if (!cell.formattedValue.isNullOrEmpty()) {
@@ -96,46 +95,52 @@ class SpreadsheetImporter : Importer() {
             return null
         }
 
-        return Protos.MerchantData.newBuilder().apply {
+        return MerchantData().apply {
+//            deeplink = null
+            plusCode = convert(rowData, ColHeader.PLUS_CODE)
+//            addDate = null
+//            updateDate = null
+            paymentMethod = convert(rowData, ColHeader.PAYMENT_METHOD)
+            merchantId = convert<Int?>(rowData, ColHeader.MERCHANT_ID)?.toLong()
+//            id = null
+            active = convert(rowData, ColHeader.ACTIVE)
+            name = convert(rowData, ColHeader.NAME)
+            address1 = convert(rowData, ColHeader.ADDRESS1)
+            address2 = convert(rowData, ColHeader.ADDRESS2)
+            address3 = convert(rowData, ColHeader.ADDRESS3)
+            address4 = convert(rowData, ColHeader.ADDRESS4)
+            latitude = convert(rowData, ColHeader.LATITUDE)
+            longitude = convert(rowData, ColHeader.LONGITUDE)
+            website = convert(rowData, ColHeader.WEBSITE)
+            phone = convert(rowData, ColHeader.PHONE)
+            territory = convert(rowData, ColHeader.TERRITORY)
+//            city = null
             source = "DCG"
-            convert<Int?>(rowData, ColHeader.SOURCE_ID)?.apply { sourceId = this }
-            convert<String?>(rowData, ColHeader.NAME)?.apply { name = this }
-            convert<String?>(rowData, ColHeader.ADDRESS1)?.apply { address1 = this }
-            convert<String?>(rowData, ColHeader.ADDRESS2)?.apply { address2 = this }
-            convert<String?>(rowData, ColHeader.ADDRESS3)?.apply { address3 = this }
-            convert<String?>(rowData, ColHeader.ADDRESS4)?.apply { address4 = this }
-            convert<Double?>(rowData, ColHeader.LATITUDE)?.apply { latitude = this }
-            convert<Double?>(rowData, ColHeader.LONGITUDE)?.apply { longitude = this }
-            convert<String?>(rowData, ColHeader.PLUS_CODE)?.apply { plusCode = this }
-            convert<String?>(rowData, ColHeader.TERRITORY)?.apply { territory = this }
-            convert<String?>(rowData, ColHeader.GOOGLE_MAPS)?.apply { googleMaps = this }
-            convert<String?>(rowData, ColHeader.LOGO_LOCATION)?.apply { logoLocation = this }
-            convert<String?>(rowData, ColHeader.WEBSITE)?.apply { website = this }
-            convert<String?>(rowData, ColHeader.PAYMENT_METHOD)?.apply { paymentMethod = this }
-            convert<String?>(rowData, ColHeader.TYPE)?.apply { type = this }
-            convert<String?>(rowData, ColHeader.PHONE)?.apply { phone = this }
-            opening = Protos.OpeningHoursData.newBuilder().apply {
-                convert<String?>(rowData, ColHeader.MON_OPEN)?.apply { monOpen = this }
-                convert<String?>(rowData, ColHeader.MON_CLOSE)?.apply { monClose = this }
-                convert<String?>(rowData, ColHeader.TUE_OPEN)?.apply { tueOpen = this }
-                convert<String?>(rowData, ColHeader.TUE_CLOSE)?.apply { tueClose = this }
-                convert<String?>(rowData, ColHeader.WED_OPEN)?.apply { wedOpen = this }
-                convert<String?>(rowData, ColHeader.WED_CLOSE)?.apply { wedClose = this }
-                convert<String?>(rowData, ColHeader.THU_OPEN)?.apply { thuOpen = this }
-                convert<String?>(rowData, ColHeader.THU_CLOSE)?.apply { thuClose = this }
-                convert<String?>(rowData, ColHeader.FRI_OPEN)?.apply { friOpen = this }
-                convert<String?>(rowData, ColHeader.FRI_CLOSE)?.apply { friClose = this }
-                convert<String?>(rowData, ColHeader.SAT_OPEN)?.apply { satOpen = this }
-                convert<String?>(rowData, ColHeader.SAT_CLOSE)?.apply { satClose = this }
-                convert<String?>(rowData, ColHeader.SUN_OPEN)?.apply { sunOpen = this }
-                convert<String?>(rowData, ColHeader.SUN_CLOSE)?.apply { sunClose = this }
-            }.build()
-            convert<String?>(rowData, ColHeader.INSTAGRAM)?.apply { instagram = this }
-            convert<String?>(rowData, ColHeader.TWITTER)?.apply { twitter = this }
-            convert<String?>(rowData, ColHeader.DELIVERY)?.apply { delivery = this }
-            convert<Boolean?>(rowData, ColHeader.ACTIVE)?.apply { active = this }
-            convert<Int>(rowData, ColHeader.MERCHANT_ID)?.apply { merchantId = this.toLong() }
-        }.build()
+            sourceId = convert(rowData, ColHeader.SOURCE_ID)
+            logoLocation = convert(rowData, ColHeader.LOGO_LOCATION)
+            googleMaps = convert(rowData, ColHeader.GOOGLE_MAPS)
+            coverImage = null
+            type = convert(rowData, ColHeader.TYPE)
+
+            instagram = convert(rowData, ColHeader.INSTAGRAM)
+            twitter = convert(rowData, ColHeader.TWITTER)
+            delivery = convert(rowData, ColHeader.DELIVERY)
+
+            monOpen = convert(rowData, ColHeader.MON_OPEN)
+            monClose = convert(rowData, ColHeader.MON_CLOSE)
+            tueOpen = convert(rowData, ColHeader.TUE_OPEN)
+            tueClose = convert(rowData, ColHeader.TUE_CLOSE)
+            wedOpen = convert(rowData, ColHeader.WED_OPEN)
+            wedClose = convert(rowData, ColHeader.WED_CLOSE)
+            thuOpen = convert(rowData, ColHeader.THU_OPEN)
+            thuClose = convert(rowData, ColHeader.THU_CLOSE)
+            friOpen = convert(rowData, ColHeader.FRI_OPEN)
+            friClose = convert(rowData, ColHeader.FRI_CLOSE)
+            satOpen = convert(rowData, ColHeader.SAT_OPEN)
+            satClose = convert(rowData, ColHeader.SAT_CLOSE)
+            sunOpen = convert(rowData, ColHeader.SUN_OPEN)
+            sunClose = convert(rowData, ColHeader.SUN_CLOSE)
+        }
     }
 
     private inline fun <reified T> convert(rowData: List<CellData>, colHeader: ColHeader): T? {
@@ -155,7 +160,7 @@ class SpreadsheetImporter : Importer() {
                         }
                     }
                     type.equals("TIME") -> {
-                        cellData.formattedValue.toLowerCase() as T
+                        cellData.formattedValue.lowercase(Locale.getDefault()) as T
                     }
                     else -> {
                         cellData.formattedValue as T

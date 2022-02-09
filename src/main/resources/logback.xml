@@ -10,13 +10,13 @@
                 <timestamp>[ignore]</timestamp>
                 <version>[ignore]</version>
                 <logger>[ignore]</logger>
-                <thread>[ignore]</thread>
+<!--                <thread>[ignore]</thread>-->
                 <level>severity</level>
                 <levelValue>[ignore]</levelValue>
             </fieldNames>
         </encoder>
     </appender>
-    <root level="INFO">
+    <root level="DEBUG">
         <appender-ref ref="jsonConsoleAppender"/>
     </root>
 </configuration>
