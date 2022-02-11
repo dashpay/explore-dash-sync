@@ -20,6 +20,7 @@ import java.io.IOException
 import java.sql.DriverManager
 import java.sql.PreparedStatement
 import java.sql.SQLException
+import java.util.*
 import java.util.zip.CheckedInputStream
 
 @Suppress("BlockingMethodInNonBlockingContext")
@@ -60,10 +61,11 @@ class SyncProcessor {
                     logger.notice("Force upload active - updating")
                 }
 
+                val timestamp = Calendar.getInstance().timeInMillis
                 val password = dbFileChecksum.toCharArray()
-                compress(dbFile, dbZipFile, password, dbFileChecksum)
+                compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
 
-                gcManager.uploadObject(dbZipFile, dbFileChecksum)
+                gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
 
             } else {
                 logger.notice("No changes were detected, updating canceled")
@@ -73,7 +75,7 @@ class SyncProcessor {
             logger.error(ex.message, ex)
         }
 
-        logger.notice("Sync finished")
+        logger.notice("### Sync finished ###")
     }
 
     @Throws(SQLException::class)
@@ -161,7 +163,7 @@ class SyncProcessor {
     }
 
     @Throws(IOException::class)
-    private fun compress(inFile: File, outFile: File, password: CharArray, checksum: String) {
+    private fun compress(inFile: File, outFile: File, password: CharArray, timestamp: Long, checksum: String) {
         logger.debug("Compressing $inFile to $outFile")
         val zipParameters = ZipParameters()
         zipParameters.isEncryptFiles = true
@@ -169,7 +171,7 @@ class SyncProcessor {
         zipParameters.compressionLevel = CompressionLevel.HIGHER
         ZipFile(outFile, password).apply {
             addFile(inFile, zipParameters)
-            comment = checksum
+            comment = "$timestamp#$checksum"
         }
         logger.debug("Compressing done $outFile")
     }
