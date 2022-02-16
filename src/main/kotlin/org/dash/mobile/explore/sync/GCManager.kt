@@ -16,6 +16,7 @@ private const val GC_PROJECT_ID = "dash-wallet-firebase"
 private const val GCS_BUCKET_NAME = "dash-wallet-firebase.appspot.com"
 
 const val CHECKSUM_META_KEY = "Data-Checksum"
+const val TIMESTAMP_META_KEY = "Data-Timestamp"
 
 class GCManager {
 
@@ -25,22 +26,24 @@ class GCManager {
         createStorage()
     }
 
-    fun remoteChecksum1(dataFile: File): String? {
-        val remoteData = gcStorage.get(GCS_BUCKET_NAME)?.get("explore/${dataFile.name}")
-        return remoteData?.crc32cToHexString
-    }
-
     fun remoteChecksum(dataFile: File): String? {
-        return gcStorage.get(GCS_BUCKET_NAME)?.get("explore/${dataFile.name}")?.metadata?.get(CHECKSUM_META_KEY)
+        return gcStorage.get(GCS_BUCKET_NAME)?.get(
+            "explore/${dataFile.nameWithoutExtension}.db"
+        )?.metadata?.get(CHECKSUM_META_KEY)
     }
 
     @Throws(IOException::class)
-    fun uploadObject(dataFile: File, checksumHex: String) {
+    fun uploadObject(dataFile: File, timestamp: Long, checksumHex: String) {
         logger.info("Uploading data to GC Storage")
-        val objectName = dataFile.name
+        val objectName = "${dataFile.nameWithoutExtension}.db"
         val blobId = BlobId.of(GCS_BUCKET_NAME, "explore/$objectName")
         val blobInfo = BlobInfo.newBuilder(blobId)
-            .setMetadata(mapOf(CHECKSUM_META_KEY to checksumHex))
+            .setMetadata(
+                mapOf(
+                    TIMESTAMP_META_KEY to timestamp.toString(),
+                    CHECKSUM_META_KEY to checksumHex
+                )
+            )
             .build()
         gcStorage.create(blobInfo, dataFile.readBytes())
         logger.info("File $dataFile uploaded to bucket $GCS_BUCKET_NAME as $objectName")
