@@ -198,7 +198,9 @@ class DashDirectDataSource(private val devApi: Boolean) : DataSource<MerchantDat
             website = convertJsonData("Website", merchantData)
             phone = convertJsonData("Phone", location)
             val inState = location.get("State")
-            territory = fixStatName(inState)
+            fixStatName(inState)?.apply {
+                territory = this
+            }
             city = convertJsonData("City", location)
             source = "DashDirect"
             sourceId = convertJsonData("Id", location)

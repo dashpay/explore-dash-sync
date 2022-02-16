@@ -86,7 +86,9 @@ class CoinFlipDataSource : DataSource<AtmData>() {
             website = "https://coinflip.tech/bitcoin-atm?location=${inData.get("slug").asString}"
             phone = convertJsonData("phone", inData)
             val inState = inData.get("state")
-            territory = fixStatName(inState)
+            fixStatName(inState)?.apply {
+                territory = this
+            }
             city = convertJsonData("city", inData)
             source = "CoinFlip"
             sourceId = convertJsonData("id", inData)

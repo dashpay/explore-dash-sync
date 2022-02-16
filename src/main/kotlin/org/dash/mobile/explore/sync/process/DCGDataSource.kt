@@ -113,7 +113,9 @@ class DCGDataSource : DataSource<MerchantData>() {
             longitude = convert(rowData, ColHeader.LONGITUDE)
             website = convert(rowData, ColHeader.WEBSITE)
             phone = convert(rowData, ColHeader.PHONE)
-            territory = convert(rowData, ColHeader.TERRITORY)
+            convert<String?>(rowData, ColHeader.TERRITORY)?.apply {
+                territory = this
+            }
 //            city = null
             source = "DCG"
             sourceId = convert(rowData, ColHeader.SOURCE_ID)
