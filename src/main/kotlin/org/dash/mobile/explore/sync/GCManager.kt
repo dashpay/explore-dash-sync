@@ -14,6 +14,7 @@ import java.io.IOException
 private const val GC_PROJECT_ID = "dash-wallet-firebase"
 
 private const val GCS_BUCKET_NAME = "dash-wallet-firebase.appspot.com"
+private const val GCS_LOCK_FILE_NAME = "explore/.lock"
 
 const val CHECKSUM_META_KEY = "Data-Checksum"
 const val TIMESTAMP_META_KEY = "Data-Timestamp"
@@ -63,5 +64,41 @@ class GCManager {
             .setProjectId(GC_PROJECT_ID)
             .setCredentials(credentials)
             .build().service
+    }
+
+    @Throws(IOException::class)
+    fun checkLock(): Pair<Long, String?> {
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        return lockFile?.run {
+            Pair(createTime, metadata["mode"])
+        } ?: Pair(-1, null)
+    }
+
+    @Throws(IOException::class)
+    fun cancelRequested(): Boolean {
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        return lockFile.metadata["cancel"] == "true"
+    }
+
+    @Throws(IOException::class)
+    fun createLockFile(mode: String) {
+        logger.debug("Creating .lock file")
+        val blobId = BlobId.of(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        val blobInfo = BlobInfo.newBuilder(blobId)
+            .setMetadata(
+                mapOf(
+                    "mode" to mode
+                )
+            ).build()
+        gcStorage.create(blobInfo)
+        logger.info(".lock file created ($mode)")
+    }
+
+    @Throws(IOException::class)
+    fun deleteLockFile() {
+        logger.debug("Deleting .lock file")
+        val blobId = BlobId.of(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        gcStorage.delete(blobId)
+        logger.info(".lock file deleted")
     }
 }

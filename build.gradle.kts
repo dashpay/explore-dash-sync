@@ -20,21 +20,20 @@ dependencies {
 
     implementation("net.lingala.zip4j:zip4j:2.9.1")
 
-    implementation("org.slf4j:slf4j-api:1.7.32")
+    implementation("org.slf4j:slf4j-api:1.7.36")
     implementation("net.logstash.logback:logstash-logback-encoder:7.0.1")
-    implementation("ch.qos.logback:logback-classic:1.2.10")
+    implementation("ch.qos.logback:logback-classic:1.2.11")
 
-    implementation("com.google.apis:google-api-services-sheets:v4-rev612-1.25.0")
+    implementation("com.google.apis:google-api-services-sheets:v4-rev20220221-1.32.1")
 
-    //implementation("org.jetbrains.kotlin:kotlin-stdlib:1.6.10")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0")
 
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
-    implementation("com.google.cloud.functions:functions-framework-api:1.0.1")
+    implementation("com.google.cloud.functions:functions-framework-api:1.0.4")
 
-    implementation("com.google.cloud:google-cloud-storage:2.3.0")
+    implementation("com.google.cloud:google-cloud-storage:2.4.4")
 
     implementation("org.xerial:sqlite-jdbc:3.36.0.3")
 

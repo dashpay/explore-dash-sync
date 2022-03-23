@@ -1,12 +1,15 @@
 package org.dash.mobile.explore.sync.process
 
-import com.google.gson.*
+import com.google.gson.GsonBuilder
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import okhttp3.OkHttpClient
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
+import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
 import retrofit2.Call
 import retrofit2.Retrofit
@@ -23,7 +26,8 @@ private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
 /**
  * Import data from DashDirect API
  */
-class DashDirectDataSource(private val devApi: Boolean) : DataSource<MerchantData>() {
+class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMessenger) :
+    DataSource<MerchantData>(slackMessenger) {
 
     override val logger = LoggerFactory.getLogger(DashDirectDataSource::class.java)!!
 
@@ -170,6 +174,7 @@ class DashDirectDataSource(private val devApi: Boolean) : DataSource<MerchantDat
             }
         }
         logger.notice("DashDirect - imported $counter records (inactive $inactive, invalid $invalid)")
+        slackMessenger.postSlackMessage("DashDirect $counter records")
     }
 
     private fun convert(

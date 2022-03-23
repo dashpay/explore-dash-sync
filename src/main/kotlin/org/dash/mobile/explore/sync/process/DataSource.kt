@@ -9,11 +9,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.transform
 import org.dash.mobile.explore.sync.process.data.Data
+import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.Logger
 import java.io.InputStreamReader
 import java.sql.PreparedStatement
 
-abstract class DataSource<T> where T : Data {
+abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data {
 
     private val usStatesAbbrMap: Map<String?, String?>
 

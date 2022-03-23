@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
+import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
 import java.io.FileNotFoundException
 import java.util.*
@@ -22,7 +23,8 @@ private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
 /**
  * Import data from Google Sheet: https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
-class DCGDataSource : DataSource<MerchantData>() {
+class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackMessenger) :
+    DataSource<MerchantData>(slackMessenger) {
 
     override val logger = LoggerFactory.getLogger(DCGDataSource::class.java)!!
 
@@ -52,7 +54,7 @@ class DCGDataSource : DataSource<MerchantData>() {
             .setIncludeGridData(true)
             .execute()
 
-        val sheetIndex = 0
+        val sheetIndex = if (useTestnetSheet) 1 else 0
         val sheet = spreadsheet.sheets[sheetIndex]
         val gridData = sheet.data[0]
 
@@ -79,7 +81,7 @@ class DCGDataSource : DataSource<MerchantData>() {
                 }
             }
         }
-        logger.notice("Google Sheet - imported $totalRecords records")
+        slackMessenger.postSlackMessage("DCG Merchants $totalRecords records", logger)
     }
 
     private fun convert(rowData: List<CellData>): MerchantData? {

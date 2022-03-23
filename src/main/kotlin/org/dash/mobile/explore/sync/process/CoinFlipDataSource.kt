@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.AtmData
+import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
 import retrofit2.Call
 import retrofit2.Retrofit
@@ -19,7 +20,7 @@ private const val BASE_URL = "https://storerocket.io/api/user/56wpZAy8An/"
 /**
  * Import data from CoinFlip API
  */
-class CoinFlipDataSource : DataSource<AtmData>() {
+class CoinFlipDataSource(slackMessenger: SlackMessenger) : DataSource<AtmData>(slackMessenger) {
 
     override val logger = LoggerFactory.getLogger(CoinFlipDataSource::class.java)!!
 
@@ -60,7 +61,7 @@ class CoinFlipDataSource : DataSource<AtmData>() {
                     emit(outData)
                 }
 
-                logger.notice("CoinFlip - imported $totalRecords records")
+                slackMessenger.postSlackMessage("CoinFlip $totalRecords records", logger)
 
             } else {
                 logger.error("error: ${response.errorBody()}")

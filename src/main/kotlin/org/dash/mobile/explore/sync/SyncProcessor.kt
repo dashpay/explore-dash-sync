@@ -1,7 +1,10 @@
 package org.dash.mobile.explore.sync
 
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flattenConcat
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onCompletion
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionLevel
@@ -13,6 +16,7 @@ import org.dash.mobile.explore.sync.process.data.AtmData
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
 import org.dash.mobile.explore.sync.process.data.MerchantData
+import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileNotFoundException
@@ -21,31 +25,52 @@ import java.sql.DriverManager
 import java.sql.PreparedStatement
 import java.sql.SQLException
 import java.util.*
+import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
 
 @Suppress("BlockingMethodInNonBlockingContext")
 @FlowPreview
-class SyncProcessor {
+class SyncProcessor(private val mode: OperationMode) {
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
 
+    private val slackMessenger = SlackMessenger()
+
     private lateinit var dbFile: File
+
+    private val gcManager by lazy {
+        GCManager()
+    }
 
     @FlowPreview
     suspend fun syncData(workingDir: File, srcDev: Boolean, forceUpload: Boolean) {
 
-        logger.notice("### Sync started ###")
+        slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
 
         try {
+            val syncLock = gcManager.checkLock()
+            val syncLockCreateTime = syncLock.first
+            // lock expires after 10 minutes if it wasn't removed for any reason
+            val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(10))
+            if (lockValid) {
+                slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
+                return
+            }
+            gcManager.createLockFile(mode.name)
+
             dbFile = createEmptyDB(workingDir)
             importData(dbFile, srcDev)
 
             val dbFileChecksum = calculateChecksum(dbFile)
             logger.debug("DB file checksum $dbFileChecksum")
 
-            val gcManager = GCManager()
+            val dbZipFileName = when (mode) {
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}.zip"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-testnet.zip"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-devnet.zip"
+            }
 
-            val dbZipFile = File(workingDir, "${dbFile.nameWithoutExtension}.zip")
+            val dbZipFile = File(workingDir, dbZipFileName)
 
             val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
             val changesDetected = dbFileChecksum != remoteChecksum
@@ -53,7 +78,10 @@ class SyncProcessor {
             if (changesDetected || forceUpload) {
                 if (changesDetected) {
                     if (remoteChecksum != null) {
-                        logger.notice("Changes detected ($dbFileChecksum vs $remoteChecksum) - updating")
+                        slackMessenger.postSlackMessage(
+                            "Changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
+                            logger
+                        )
                     } else {
                         logger.notice("No remote data - uploading")
                     }
@@ -61,21 +89,38 @@ class SyncProcessor {
                     logger.notice("Force upload active - updating")
                 }
 
+                throwIfCanceled()
                 val timestamp = Calendar.getInstance().timeInMillis
                 val password = dbFileChecksum.toCharArray()
                 compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
 
+                throwIfCanceled()
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
 
             } else {
                 logger.notice("No changes were detected, updating canceled")
+                slackMessenger.postSlackMessage("No changes detected, updating canceled", logger)
             }
 
+            slackMessenger.postSlackMessage("### Sync finished ###", logger)
+
+            gcManager.deleteLockFile()
+
+        } catch (ex: InterruptedException) {
+            slackMessenger.postSlackMessage("!!! Sync canceled !!!", logger)
+            gcManager.deleteLockFile()
         } catch (ex: Exception) {
             logger.error(ex.message, ex)
+            slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}", logger)
+            gcManager.deleteLockFile()
         }
+    }
 
-        logger.notice("### Sync finished ###")
+    @Throws(InterruptedException::class)
+    private fun throwIfCanceled() {
+        if (gcManager.cancelRequested()) {
+            throw InterruptedException("Sync canceled")
+        }
     }
 
     @Throws(SQLException::class)
@@ -83,14 +128,14 @@ class SyncProcessor {
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
-            val dashDirectDataFlow = DashDirectDataSource(srcDev).getData(prepStatement)
-            val dcgDataFlow = DCGDataSource().getData(prepStatement)
+            val dashDirectDataFlow = DashDirectDataSource(srcDev, slackMessenger).getData(prepStatement)
+            val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
 
             val merchantDataFlow = flowOf(dcgDataFlow, dashDirectDataFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
             prepStatement = dbConnection.prepareStatement(AtmData.INSERT_STATEMENT)
-            val coinFlipDataFlow = CoinFlipDataSource().getData(prepStatement)
+            val coinFlipDataFlow = CoinFlipDataSource(slackMessenger).getData(prepStatement)
             val atmDataFlow = flowOf(coinFlipDataFlow).flattenConcat()
             syncData(atmDataFlow, prepStatement)
 
@@ -158,6 +203,10 @@ class SyncProcessor {
             if (batchSize == 128) {
                 prepStatement.executeBatch()
                 batchSize = 0
+            }
+
+            if(totalRecords % 20000 == 0) {
+                throwIfCanceled()
             }
         }
     }
