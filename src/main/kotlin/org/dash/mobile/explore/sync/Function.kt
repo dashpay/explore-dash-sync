@@ -47,7 +47,8 @@ class Function : BackgroundFunction<PubSubMessage?> {
                     SyncProcessor(mode).syncData(
                         File("/tmp"),
                         srcDev = false,
-                        forceUpload = false
+                        forceUpload = false,
+                        quietMode = false // we need notifications
                     )
                 }
             }

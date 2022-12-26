@@ -18,6 +18,7 @@ private const val SLACK_CHANNEL_URL_KEY = "AcO0fLbx3q9S4moIrb7joGy3"
 class SlackMessenger {
 
     private val logger = LoggerFactory.getLogger(SlackMessenger::class.java)!!
+    var quietMode = false
 
     interface Endpoint {
 
@@ -51,8 +52,10 @@ class SlackMessenger {
 
     suspend fun postSlackMessage(message: String, logger: Logger? = null) {
         logger?.notice(message)
-        val emoji = ":success:"
-        val slackMessage = SlackMessage(message, emoji, false)
-        apiService.postSlackMessage(SLACK_CHANNEL_URL_KEY, slackMessage)
+        if (!quietMode) {
+            val emoji = ":success:"
+            val slackMessage = SlackMessage(message, emoji, false)
+            apiService.postSlackMessage(SLACK_CHANNEL_URL_KEY, slackMessage)
+        }
     }
 }

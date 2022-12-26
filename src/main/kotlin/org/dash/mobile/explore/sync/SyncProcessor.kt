@@ -43,8 +43,8 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @FlowPreview
-    suspend fun syncData(workingDir: File, srcDev: Boolean, forceUpload: Boolean) {
-
+    suspend fun syncData(workingDir: File, srcDev: Boolean, forceUpload: Boolean, quietMode: Boolean) {
+        slackMessenger.quietMode = quietMode
         slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
 
         try {
