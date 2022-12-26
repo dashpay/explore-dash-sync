@@ -144,6 +144,8 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             satClose = convert(rowData, ColHeader.SAT_CLOSE)
             sunOpen = convert(rowData, ColHeader.SUN_OPEN)
             sunClose = convert(rowData, ColHeader.SUN_CLOSE)
+
+            // min and max purchase amounts are not specified in the DCG source data
         }
     }
 

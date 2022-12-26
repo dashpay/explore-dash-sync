@@ -228,6 +228,9 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             satClose = convertJsonData("SaturdayClose", location)
             sunOpen = convertJsonData("SundayOpen", location)
             sunClose = convertJsonData("SundayClose", location)
+
+            minCardPurchase = convertJsonData("MinimumCardPurchase", merchantData)
+            maxCardPurchase = convertJsonData("MaximumCardPurchase", merchantData)
         }
     }
 
