@@ -36,8 +36,8 @@ fun main(args: Array<String>) {
 
     runBlocking {
         launch(Dispatchers.IO) {
-            SyncProcessor(OperationMode.TESTNET)
-                .syncData(File("."), srcDev, upload)
+            SyncProcessor(OperationMode.DEVNET)
+                .syncData(File("."), srcDev, upload, quietMode)
         }
     }
 
