@@ -52,7 +52,7 @@ class GCManager {
 
     private fun createStorage(): Storage {
         val serviceAccount =
-            javaClass.classLoader.getResourceAsStream("dash-wallet-firebase-619341caf23e.json")
+            javaClass.classLoader.getResourceAsStream("credentials.json")
                 ?: throw FileNotFoundException(
                     "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
                             "You can download it from https://console.cloud.google.com/apis/credentials"
