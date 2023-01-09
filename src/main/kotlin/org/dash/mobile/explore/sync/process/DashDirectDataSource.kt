@@ -231,6 +231,7 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
 
             minCardPurchase = convertJsonData("MinimumCardPurchase", merchantData)
             maxCardPurchase = convertJsonData("MaximumCardPurchase", merchantData)
+            savingsPercentage = convertJsonData("SavingsPercentage", merchantData)
         }
     }
 

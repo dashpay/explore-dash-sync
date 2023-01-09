@@ -48,12 +48,13 @@ data class MerchantData(
     var sunClose: String? = "",
 
     var minCardPurchase: Double? = 0.0,
-    var maxCardPurchase: Double? = 0.0
+    var maxCardPurchase: Double? = 0.0,
+    var savingsPercentage: Double? = 0.0
 ) : Data {
 
     companion object {
 
-        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
         const val DEEP_LINK_COL = 1
         const val PLUS_CODE_COL = 2
@@ -82,6 +83,7 @@ data class MerchantData(
         const val TYPE_COL = 25
         const val MIN_CARD_PURCHASE_COL = 26
         const val MAX_CARD_PURCHASE_COL = 27
+        const val SAVINGS_PERCENTAGE_COL = 28
     }
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {
@@ -112,6 +114,7 @@ data class MerchantData(
             setString(TYPE_COL, type)
             setDouble(MIN_CARD_PURCHASE_COL, minCardPurchase ?: 0.0)
             setDouble(MAX_CARD_PURCHASE_COL, maxCardPurchase ?: 0.0)
+            setDouble(SAVINGS_PERCENTAGE_COL, savingsPercentage ?: 0.0)
         }
     }
 }
