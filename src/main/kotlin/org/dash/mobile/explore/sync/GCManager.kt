@@ -19,12 +19,16 @@ private const val GCS_LOCK_FILE_NAME = "explore/.lock"
 const val CHECKSUM_META_KEY = "Data-Checksum"
 const val TIMESTAMP_META_KEY = "Data-Timestamp"
 
-class GCManager {
+class GCManager(private val mode: OperationMode) {
 
     private val logger = LoggerFactory.getLogger(GCManager::class.java)!!
 
     private val gcStorage by lazy {
         createStorage()
+    }
+
+    private val lockFileName by lazy {
+        "$GCS_LOCK_FILE_NAME-$mode"
     }
 
     fun remoteChecksum(dataFile: File): String? {
@@ -68,7 +72,7 @@ class GCManager {
 
     @Throws(IOException::class)
     fun checkLock(): Pair<Long, String?> {
-        val lockFile = gcStorage.get(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName)
         return lockFile?.run {
             Pair(createTime, metadata["mode"])
         } ?: Pair(-1, null)
@@ -76,14 +80,14 @@ class GCManager {
 
     @Throws(IOException::class)
     fun cancelRequested(): Boolean {
-        val lockFile = gcStorage.get(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName)
         return lockFile.metadata["cancel"] == "true"
     }
 
     @Throws(IOException::class)
     fun createLockFile(mode: String) {
         logger.debug("Creating .lock file")
-        val blobId = BlobId.of(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName)
         val blobInfo = BlobInfo.newBuilder(blobId)
             .setMetadata(
                 mapOf(
@@ -97,7 +101,7 @@ class GCManager {
     @Throws(IOException::class)
     fun deleteLockFile() {
         logger.debug("Deleting .lock file")
-        val blobId = BlobId.of(GCS_BUCKET_NAME, GCS_LOCK_FILE_NAME)
+        val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName)
         gcStorage.delete(blobId)
         logger.info(".lock file deleted")
     }

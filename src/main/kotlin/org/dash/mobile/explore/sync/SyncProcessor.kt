@@ -39,7 +39,7 @@ class SyncProcessor(private val mode: OperationMode) {
     private lateinit var dbFile: File
 
     private val gcManager by lazy {
-        GCManager()
+        GCManager(mode)
     }
 
     @FlowPreview
