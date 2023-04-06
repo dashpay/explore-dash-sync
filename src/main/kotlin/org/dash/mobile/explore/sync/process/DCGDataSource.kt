@@ -17,7 +17,7 @@ import java.io.FileNotFoundException
 import java.util.*
 
 private const val APPLICATION_NAME = "Explore Dash Sync"
-const val CREDENTIALS_FILE_PATH = "dash-wallet-firebase-619341caf23e.json"
+const val CREDENTIALS_FILE_PATH = "credentials.json"
 private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
 
 /**
@@ -144,6 +144,8 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             satClose = convert(rowData, ColHeader.SAT_CLOSE)
             sunOpen = convert(rowData, ColHeader.SUN_OPEN)
             sunClose = convert(rowData, ColHeader.SUN_CLOSE)
+
+            // min and max purchase amounts are not specified in the DCG source data
         }
     }
 
