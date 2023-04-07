@@ -9,7 +9,7 @@ data class MerchantData(
     var updateDate: String? = "",
     var paymentMethod: String? = "",
     var merchantId: Long? = null,
-    var id: Int? = null,        // leave null for auto increment
+    var id: Int? = null, // leave null for auto increment
     var active: Boolean? = true,
     var name: String? = "",
     var address1: String? = "",
@@ -45,16 +45,12 @@ data class MerchantData(
     var satOpen: String? = "",
     var satClose: String? = "",
     var sunOpen: String? = "",
-    var sunClose: String? = "",
-
-    var minCardPurchase: Double? = 0.0,
-    var maxCardPurchase: Double? = 0.0,
-    var savingsPercentage: Double? = 0.0
+    var sunClose: String? = ""
 ) : Data {
 
     companion object {
 
-        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
         const val DEEP_LINK_COL = 1
         const val PLUS_CODE_COL = 2
@@ -81,9 +77,6 @@ data class MerchantData(
         const val GOOGLE_MAPS_COL = 23
         const val COVER_IMAGE_COL = 24
         const val TYPE_COL = 25
-        const val MIN_CARD_PURCHASE_COL = 26
-        const val MAX_CARD_PURCHASE_COL = 27
-        const val SAVINGS_PERCENTAGE_COL = 28
     }
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {
@@ -112,9 +105,6 @@ data class MerchantData(
             setString(GOOGLE_MAPS_COL, googleMaps)
             setString(COVER_IMAGE_COL, coverImage)
             setString(TYPE_COL, type)
-            setDouble(MIN_CARD_PURCHASE_COL, minCardPurchase ?: 0.0)
-            setDouble(MAX_CARD_PURCHASE_COL, maxCardPurchase ?: 0.0)
-            setDouble(SAVINGS_PERCENTAGE_COL, savingsPercentage ?: 0.0)
         }
     }
 }

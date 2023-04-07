@@ -110,7 +110,6 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
     var invalid = 0
 
     override fun getRawData(): Flow<MerchantData> = flow {
-
         logger.notice("Importing data from DashDirect ($baseUrl)")
 
         val pageSize = 20000
@@ -136,26 +135,21 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
                     logger.info("DashDirect.totalRows: ${responseData.totalRows}")
 
                     responseData.merchants.forEach { merchant ->
-
                         val merchantData = merchant.merchant
-                        if (merchantData.get("IsActive").asBoolean) {
 
+                        if (merchantData.get("IsActive").asBoolean) {
                             merchant.locations.forEach { location ->
 
                                 val locationData = location.asJsonObject
                                 if (locationData.get("IsActive").asBoolean) {
-
                                     val type = getType(merchant)
 
                                     if (isValidLocation(type, locationData)) {
-
                                         counter++
                                         emit(convert(merchant, locationData))
-
                                     } else {
                                         invalid++
                                     }
-
                                 } else {
                                     inactive++
                                 }
@@ -164,7 +158,6 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
                             inactive += merchant.locations.size()
                         }
                     }
-
                 } else {
                     logger.error("error: $response")
                     break
@@ -181,11 +174,9 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
         merchant: Endpoint.AllMerchantLocationsResponseMerchantData,
         location: JsonObject
     ): MerchantData {
-
         val merchantData = merchant.merchant
 
         return MerchantData().apply {
-
             deeplink = convertJsonData("DeepLink", merchantData)
 //            plusCode = null
 //            addDate = null
@@ -228,21 +219,10 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             satClose = convertJsonData("SaturdayClose", location)
             sunOpen = convertJsonData("SundayOpen", location)
             sunClose = convertJsonData("SundayClose", location)
-
-            minCardPurchase = convertJsonData("MinimumCardPurchase", merchantData)
-            maxCardPurchase = convertJsonData("MaximumCardPurchase", merchantData)
-            savingsPercentage = convertJsonData("SavingsPercentage", merchantData)
-            if (savingsPercentage == null || savingsPercentage == 0.0) {
-                val level1: Double? = convertJsonData("Level1", merchantData)
-                if (level1 != null) {
-                    savingsPercentage = level1
-                }
-            }
         }
     }
 
     private fun isValidLocation(type: String?, location: JsonObject): Boolean {
-
         if (type == null) {
             return false
         }
@@ -271,7 +251,7 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             isOnline && totalLocations > 1 -> "both"
             isOnline -> "online"
             else -> {
-                logger.error("Merchant has invalid type:\n${merchantData}")
+                logger.error("Merchant has invalid type:\n$merchantData")
                 null
             }
         }
