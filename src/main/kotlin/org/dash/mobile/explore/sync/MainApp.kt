@@ -13,7 +13,6 @@ const val QUIET_ARG = "-quiet"
 
 @FlowPreview
 fun main(args: Array<String>) {
-
     val validParams = setOf(UPLOAD_ARG, DEV_MODE_ARG, QUIET_ARG)
 
     var upload = false

@@ -96,7 +96,6 @@ class SyncProcessor(private val mode: OperationMode) {
 
                 throwIfCanceled()
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
-
             } else {
                 logger.notice("No changes were detected, updating canceled")
                 slackMessenger.postSlackMessage("No changes detected, updating canceled", logger)
@@ -105,7 +104,6 @@ class SyncProcessor(private val mode: OperationMode) {
             slackMessenger.postSlackMessage("### Sync finished ###", logger)
 
             gcManager.deleteLockFile()
-
         } catch (ex: InterruptedException) {
             slackMessenger.postSlackMessage("!!! Sync canceled !!!", logger)
             gcManager.deleteLockFile()
@@ -138,7 +136,6 @@ class SyncProcessor(private val mode: OperationMode) {
             val coinFlipDataFlow = CoinFlipDataSource(slackMessenger).getData(prepStatement)
             val atmDataFlow = flowOf(coinFlipDataFlow).flattenConcat()
             syncData(atmDataFlow, prepStatement)
-
         } catch (ex: SQLException) {
             logger.error(ex.message, ex)
             throw ex
@@ -181,21 +178,17 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     private suspend fun <T> syncData(data: Flow<T>, prepStatement: PreparedStatement) where T : Data {
-
         var batchSize = 0
         var totalRecords = 0
 
         data.onCompletion {
-
             if (batchSize > 0) {
                 prepStatement.executeBatch()
                 batchSize = 0
             }
 
             logger.debug("Table sync complete ($totalRecords records)")
-
         }.collect {
-
             prepStatement.addBatch()
             batchSize++
             totalRecords++
@@ -205,7 +198,7 @@ class SyncProcessor(private val mode: OperationMode) {
                 batchSize = 0
             }
 
-            if(totalRecords % 20000 == 0) {
+            if (totalRecords % 20000 == 0) {
                 throwIfCanceled()
             }
         }

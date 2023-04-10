@@ -12,7 +12,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import java.util.concurrent.TimeUnit
 
-private const val SLACK_ENDPOINT = "https://hooks.slack.com"// T03CM2KCH/B0367DR17JB/AcO0fLbx3q9S4moIrb7joGy3
+private const val SLACK_ENDPOINT = "https://hooks.slack.com" // T03CM2KCH/B0367DR17JB/AcO0fLbx3q9S4moIrb7joGy3
 private const val SLACK_CHANNEL_URL_KEY = "AcO0fLbx3q9S4moIrb7joGy3"
 
 class SlackMessenger {

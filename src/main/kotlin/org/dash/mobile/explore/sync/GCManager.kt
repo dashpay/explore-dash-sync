@@ -59,7 +59,7 @@ class GCManager(private val mode: OperationMode) {
             javaClass.classLoader.getResourceAsStream("credentials.json")
                 ?: throw FileNotFoundException(
                     "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
-                            "You can download it from https://console.cloud.google.com/apis/credentials"
+                        "You can download it from https://console.cloud.google.com/apis/credentials"
                 )
 
         val credentials = GoogleCredentials.fromStream(serviceAccount)
@@ -89,11 +89,7 @@ class GCManager(private val mode: OperationMode) {
         logger.debug("Creating .lock file")
         val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName)
         val blobInfo = BlobInfo.newBuilder(blobId)
-            .setMetadata(
-                mapOf(
-                    "mode" to mode
-                )
-            ).build()
+            .setMetadata(mapOf("mode" to mode)).build()
         gcStorage.create(blobInfo)
         logger.info(".lock file created ($mode)")
     }
