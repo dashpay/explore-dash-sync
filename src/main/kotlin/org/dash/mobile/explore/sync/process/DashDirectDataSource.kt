@@ -4,24 +4,27 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
-import retrofit2.Call
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.Body
-import retrofit2.http.Headers
-import retrofit2.http.POST
+import retrofit2.http.*
+import java.io.FileNotFoundException
 import java.io.IOException
+import java.util.*
 import java.util.concurrent.TimeUnit
+import kotlin.collections.ArrayList
 
 private const val BASE_URL = "https://api.dashdirect.org/"
 private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
+private const val CRAYPAY_URL = "https://auth.craypay.com/"
 
 /**
  * Import data from DashDirect API
@@ -39,14 +42,25 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
         }
     }
 
-    interface Endpoint {
-
-        data class Response(
-            @SerializedName("Successful") val successful: Boolean,
-            @SerializedName("ErrorMessage") val errorMessage: String,
-            @SerializedName("Data") val data: JsonArray?
+    interface TokenEndpoint {
+        data class TokenResponse(
+            @SerializedName("access_token") val accessToken: String,
+            @SerializedName("expires_in") val expiresIn: Int,
+            @SerializedName("token_type") val tokenType: String,
+            @SerializedName("scope") val scope: String
         )
 
+        @FormUrlEncoded
+        @POST("connect/token")
+        suspend fun getToken(
+            @Field("client_id") clientId: String,
+            @Field("client_secret") clientSecret: String,
+            @Field("grant_type") grantType: String,
+            @Field("scope") scope: String
+        ): TokenResponse
+    }
+
+    interface Endpoint {
         data class AllMerchantLocationsResponse(
             @SerializedName("Successful") val successful: Boolean,
             @SerializedName("ErrorMessage") val errorMessage: String,
@@ -54,13 +68,13 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
         )
 
         data class AllMerchantLocationsResponseData(
-            @SerializedName("Merchants") val merchants: ArrayList<AllMerchantLocationsResponseMerchantData>,
+            @SerializedName("Merchants") val merchants: ArrayList<MerchantData>,
             @SerializedName("TotalRows") val totalRows: Int,
             @SerializedName("TotalPages") val totalPages: Int,
             @SerializedName("CurrentPageIndex") val currentPageIndex: Int
         )
 
-        data class AllMerchantLocationsResponseMerchantData(
+        data class MerchantData(
             @SerializedName("Merchant") val merchant: JsonObject,
             @SerializedName("Locations") val locations: JsonArray
         )
@@ -70,20 +84,19 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             @SerializedName("PageIndex") val pageIndex: Int
         )
 
-        @POST("Merchant/GetAllMerchants")
-        fun getAllMerchants(): Call<Response>
-
         @Headers(
-            "appKey: BEBF2B6B-1295-4122-AA8E-09605FE26DE8",
-            "apiKey: BCE98756-65A2-46EF-967B-BBF89BA23799"
+            "firstName: Wallet",
+            "lastName: Dash",
+            "email: mobile@dash.org"
         )
-        @POST("Merchant/GetAllMerchantLocations")
-        suspend fun getAllMerchantLocations(@Body requestData: AllMerchantLocationsRequest): AllMerchantLocationsResponse
-
-        @POST("Merchant/GetAllMerchantLocations")
-        fun getAllMerchantLocationsCall(@Body requestData: AllMerchantLocationsRequest): Call<AllMerchantLocationsResponse>
+        @POST("dashdirect/GetAllMerchantLocations")
+        suspend fun getAllMerchantLocations(
+            @Header("Authorization") token: String,
+            @Body requestData: AllMerchantLocationsRequest
+        ): AllMerchantLocationsResponse
     }
 
+    private val auth: TokenEndpoint
     private val apiService: Endpoint
 
     init {
@@ -97,12 +110,19 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
 
+        val authRetrofit: Retrofit = Retrofit.Builder()
+            .baseUrl(CRAYPAY_URL)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .client(okHttpClient)
+            .build()
+
         val retrofit: Retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
 
+        auth = authRetrofit.create(TokenEndpoint::class.java)
         apiService = retrofit.create(Endpoint::class.java)
     }
 
@@ -110,6 +130,7 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
     var invalid = 0
 
     override fun getRawData(): Flow<MerchantData> = flow {
+        val token = getAuthToken()
         logger.notice("Importing data from DashDirect ($baseUrl)")
 
         val pageSize = 20000
@@ -121,6 +142,7 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             try {
                 val response =
                     apiService.getAllMerchantLocations(
+                        "${token.tokenType} ${token.accessToken}",
                         Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
                     )
                 if (response.successful) {
@@ -135,27 +157,21 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
                     logger.info("DashDirect.totalRows: ${responseData.totalRows}")
 
                     responseData.merchants.forEach { merchant ->
-                        val merchantData = merchant.merchant
+                        merchant.locations.forEach { location ->
+                            val locationData = location.asJsonObject
 
-                        if (merchantData.get("IsActive").asBoolean) {
-                            merchant.locations.forEach { location ->
+                            if (locationData.get("IsActive").asBoolean) {
+                                val type = getType(merchant)
 
-                                val locationData = location.asJsonObject
-                                if (locationData.get("IsActive").asBoolean) {
-                                    val type = getType(merchant)
-
-                                    if (isValidLocation(type, locationData)) {
-                                        counter++
-                                        emit(convert(merchant, locationData))
-                                    } else {
-                                        invalid++
-                                    }
+                                if (isValidLocation(type, locationData)) {
+                                    counter++
+                                    emit(convert(merchant, locationData))
                                 } else {
-                                    inactive++
+                                    invalid++
                                 }
+                            } else {
+                                inactive++
                             }
-                        } else {
-                            inactive += merchant.locations.size()
                         }
                     }
                 } else {
@@ -170,8 +186,24 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
         slackMessenger.postSlackMessage("DashDirect $counter records")
     }
 
+    private suspend fun getAuthToken(): TokenEndpoint.TokenResponse {
+        logger.notice("Getting secrets")
+        val properties = Properties()
+        val inputStream = javaClass.classLoader.getResourceAsStream("service.properties")
+            ?: throw FileNotFoundException("service properties not found")
+        inputStream.use { withContext(Dispatchers.IO) { properties.load(inputStream) } }
+
+        val clientId = properties.getProperty("CRAYPAY_CLIENT_ID")
+        val clientSecret = properties.getProperty("CRAYPAY_CLIENT_SECRET")
+        require(clientId.isNotEmpty())
+        require(clientSecret.isNotEmpty())
+
+        logger.notice("Fetching CrayPay auth token")
+        return auth.getToken(clientId, clientSecret, "client_credentials", "dash_wallet_dev")
+    }
+
     private fun convert(
-        merchant: Endpoint.AllMerchantLocationsResponseMerchantData,
+        merchant: Endpoint.MerchantData,
         location: JsonObject
     ): MerchantData {
         val merchantData = merchant.merchant
@@ -188,7 +220,7 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             address1 = getAddress1(location)
             address2 = getAddress2(location)
             address3 = convertJsonData("PostalCode", location)
-//            address4 = null
+            //            address4 = null
             latitude = getLatitude(location)
             longitude = getLongitude(location)
             website = convertJsonData("Website", merchantData)
@@ -240,7 +272,7 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
         return !isAddress1Empty || !isAddress2Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }
 
-    private fun getType(merchant: Endpoint.AllMerchantLocationsResponseMerchantData): String? {
+    private fun getType(merchant: Endpoint.MerchantData): String? {
         val merchantData = merchant.merchant
         val totalLocations = merchant.locations.size()
         val isPhysical = merchantData.getAsJsonPrimitive("IsPhysical").asBoolean
