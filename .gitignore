@@ -3,3 +3,5 @@
 /build/
 *.json
 .idea/
+.DS_Store
+*.properties

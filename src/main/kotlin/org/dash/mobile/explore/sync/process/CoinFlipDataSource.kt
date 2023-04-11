@@ -34,7 +34,6 @@ class CoinFlipDataSource(slackMessenger: SlackMessenger) : DataSource<AtmData>(s
     }
 
     override fun getRawData(): Flow<AtmData> = flow {
-
         logger.notice("Importing data from CoinFlip")
 
         val gson = GsonBuilder()
@@ -62,7 +61,6 @@ class CoinFlipDataSource(slackMessenger: SlackMessenger) : DataSource<AtmData>(s
                 }
 
                 slackMessenger.postSlackMessage("CoinFlip $totalRecords records", logger)
-
             } else {
                 logger.error("error: ${response.errorBody()}")
             }

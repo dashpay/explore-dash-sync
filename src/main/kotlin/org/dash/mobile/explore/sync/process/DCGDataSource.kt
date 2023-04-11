@@ -31,14 +31,16 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
     private val jsonFactory = GsonFactory.getDefaultInstance()
 
     override fun getRawData(): Flow<MerchantData> = flow {
-
-        logger.notice("Importing data from Google Sheet https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA")
+        logger.notice(
+            "Importing data from Google Sheet " +
+                "https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
+        )
 
         // Load Service user credentials
         val resourceStream = javaClass.classLoader.getResourceAsStream(CREDENTIALS_FILE_PATH)
             ?: throw FileNotFoundException(
                 "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
-                        "You can download it from https://console.cloud.google.com/apis/credentials"
+                    "You can download it from https://console.cloud.google.com/apis/credentials"
             )
         val credentials = GoogleCredentials.fromStream(resourceStream)
             .createScoped(SheetsScopes.SPREADSHEETS_READONLY)
@@ -85,7 +87,6 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
     }
 
     private fun convert(rowData: List<CellData>): MerchantData? {
-
         var emptyRow = true
         for (cell in rowData) {
             if (!cell.formattedValue.isNullOrEmpty()) {

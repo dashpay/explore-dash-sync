@@ -9,14 +9,12 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.io.File
 
-
 class Function : BackgroundFunction<PubSubMessage?> {
 
     private val logger = LoggerFactory.getLogger(Function::class.java)
 
     @FlowPreview
     override fun accept(message: PubSubMessage?, context: Context) {
-
         val version = javaClass.getPackage().implementationVersion
         logger.info("Dash Explore Sync ver. $version")
 
@@ -28,11 +26,11 @@ class Function : BackgroundFunction<PubSubMessage?> {
 //
 //        logger.info("${message}\t(data=$args)")
 
-        //{"data":"c3JjPXByb2QgZHN0PWRldg==", "attributes":[["atr1","val1"],["atr2","val2"]]}
-        //{"attributes":[["mode","testnet"]]}
-        //gcloud pubsub topics publish dash-explore-sync-trigger --message="src=prod dst=dev" --attribute=src=prod,dst=dev
+        // {"data":"c3JjPXByb2QgZHN0PWRldg==", "attributes":[["atr1","val1"],["atr2","val2"]]}
+        // {"attributes":[["mode","testnet"]]}
+        // gcloud pubsub topics publish dash-explore-sync-trigger --message="src=prod dst=dev" --attribute=src=prod,dst=dev
 
-        val mode = when(message?.attributes?.get("mode")) {
+        val mode = when (message?.attributes?.get("mode")) {
             "prod" -> OperationMode.PRODUCTION
             "testnet" -> OperationMode.TESTNET
             "devnet" -> OperationMode.DEVNET
