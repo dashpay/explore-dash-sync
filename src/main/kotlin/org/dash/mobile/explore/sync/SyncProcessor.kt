@@ -11,6 +11,7 @@ import net.lingala.zip4j.model.enums.CompressionLevel
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinFlipDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
+import org.dash.mobile.explore.sync.process.DashDirectApiMode
 import org.dash.mobile.explore.sync.process.DashDirectDataSource
 import org.dash.mobile.explore.sync.process.data.AtmData
 import org.dash.mobile.explore.sync.process.data.Crc32c
@@ -43,7 +44,7 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @FlowPreview
-    suspend fun syncData(workingDir: File, srcDev: Boolean, forceUpload: Boolean, quietMode: Boolean) {
+    suspend fun syncData(workingDir: File, apiMode: DashDirectApiMode, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
         slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
 
@@ -59,7 +60,7 @@ class SyncProcessor(private val mode: OperationMode) {
             gcManager.createLockFile(mode.name)
 
             dbFile = createEmptyDB(workingDir)
-            importData(dbFile, srcDev)
+            importData(dbFile, apiMode)
 
             val dbFileChecksum = calculateChecksum(dbFile)
             logger.debug("DB file checksum $dbFileChecksum")
@@ -122,7 +123,7 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @Throws(SQLException::class)
-    private suspend fun importData(dbFile: File, srcDev: Boolean) {
+    private suspend fun importData(dbFile: File, srcDev: DashDirectApiMode) {
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
