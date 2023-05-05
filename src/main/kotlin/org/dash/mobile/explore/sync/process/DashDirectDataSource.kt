@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -101,11 +100,6 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
             .connectTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .also { client ->
-                val logging = HttpLoggingInterceptor { message -> logger.info(message) }
-                logging.level = HttpLoggingInterceptor.Level.BODY
-                client.addInterceptor(logging)
-            }
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
@@ -167,7 +161,13 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
 
                                 if (isValidLocation(type, locationData)) {
                                     counter++
-                                    emit(convert(merchant, locationData))
+                                    val merchantData = convert(merchant, locationData)
+
+                                    if (merchantData.name.isNullOrEmpty()) {
+                                        invalid++
+                                    } else {
+                                        emit(merchantData)
+                                    }
                                 } else {
                                     invalid++
                                 }
