@@ -22,43 +22,39 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
 
+enum class DashDirectApiMode {
+    DEV,
+    STAGING,
+    PROD;
+
+    fun getBaseUrl(): String {
+        return when (this) {
+            DEV -> DEV_BASE_URL
+            STAGING -> STAGING_BASE_URL
+            PROD -> BASE_URL
+        }
+    }
+
+    fun getClientIdPrefName(): String {
+        return when (this) {
+            DEV -> "CRAYPAY_CLIENT_ID_DEV"
+            STAGING -> "CRAYPAY_CLIENT_ID_STAGING"
+            PROD -> "CRAYPAY_CLIENT_ID_PROD"
+        }
+    }
+}
+
 private const val BASE_URL = "https://api.dashdirect.org/"
+private const val STAGING_BASE_URL = "https://apistaging.dashdirect.org/"
 private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
-private const val CRAYPAY_URL = "https://auth.craypay.com/"
 
 /**
  * Import data from DashDirect API
  */
-class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMessenger) :
+class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
 
     override val logger = LoggerFactory.getLogger(DashDirectDataSource::class.java)!!
-
-    private val baseUrl by lazy {
-        if (devApi) {
-            DEV_BASE_URL
-        } else {
-            BASE_URL
-        }
-    }
-
-    interface TokenEndpoint {
-        data class TokenResponse(
-            @SerializedName("access_token") val accessToken: String,
-            @SerializedName("expires_in") val expiresIn: Int,
-            @SerializedName("token_type") val tokenType: String,
-            @SerializedName("scope") val scope: String
-        )
-
-        @FormUrlEncoded
-        @POST("connect/token")
-        suspend fun getToken(
-            @Field("client_id") clientId: String,
-            @Field("client_secret") clientSecret: String,
-            @Field("grant_type") grantType: String,
-            @Field("scope") scope: String
-        ): TokenResponse
-    }
 
     interface Endpoint {
         data class AllMerchantLocationsResponse(
@@ -84,19 +80,15 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             @SerializedName("PageIndex") val pageIndex: Int
         )
 
-        @Headers(
-            "firstName: Wallet",
-            "lastName: Dash",
-            "email: mobile@dash.org"
-        )
+        @Headers("email: mobile@dash.org")
         @POST("dashdirect/GetAllMerchantLocations")
         suspend fun getAllMerchantLocations(
+            @Header("clientId") clientId: String,
             @Header("Authorization") token: String,
             @Body requestData: AllMerchantLocationsRequest
         ): AllMerchantLocationsResponse
     }
 
-    private val auth: TokenEndpoint
     private val apiService: Endpoint
 
     init {
@@ -110,19 +102,12 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
 
-        val authRetrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(CRAYPAY_URL)
-            .addConverterFactory(GsonConverterFactory.create(gson))
-            .client(okHttpClient)
-            .build()
-
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(apiMode.getBaseUrl())
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
 
-        auth = authRetrofit.create(TokenEndpoint::class.java)
         apiService = retrofit.create(Endpoint::class.java)
     }
 
@@ -130,8 +115,18 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
     var invalid = 0
 
     override fun getRawData(): Flow<MerchantData> = flow {
-        val token = getAuthToken()
-        logger.notice("Importing data from DashDirect ($baseUrl)")
+        logger.notice("Getting secrets")
+        val properties = Properties()
+        val inputStream = javaClass.classLoader.getResourceAsStream("service.properties")
+            ?: throw FileNotFoundException("service properties not found")
+        inputStream.use { withContext(Dispatchers.IO) { properties.load(inputStream) } }
+
+        val clientId = properties.getProperty(apiMode.getClientIdPrefName())
+        val authToken = properties.getProperty("CRAYPAY_AUTH_TOKEN")
+        require(clientId.isNotEmpty())
+        require(authToken.isNotEmpty())
+
+        logger.notice("Importing data from DashDirect (${apiMode.getBaseUrl()})")
 
         val pageSize = 20000
         var currentPageIndex = 1
@@ -142,7 +137,8 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
             try {
                 val response =
                     apiService.getAllMerchantLocations(
-                        "${token.tokenType} ${token.accessToken}",
+                        clientId,
+                        "Bearer $authToken",
                         Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
                     )
                 if (response.successful) {
@@ -165,7 +161,13 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
 
                                 if (isValidLocation(type, locationData)) {
                                     counter++
-                                    emit(convert(merchant, locationData))
+                                    val merchantData = convert(merchant, locationData)
+
+                                    if (merchantData.name.isNullOrEmpty()) {
+                                        invalid++
+                                    } else {
+                                        emit(merchantData)
+                                    }
                                 } else {
                                     invalid++
                                 }
@@ -184,22 +186,6 @@ class DashDirectDataSource(private val devApi: Boolean, slackMessenger: SlackMes
         }
         logger.notice("DashDirect - imported $counter records (inactive $inactive, invalid $invalid)")
         slackMessenger.postSlackMessage("DashDirect $counter records")
-    }
-
-    private suspend fun getAuthToken(): TokenEndpoint.TokenResponse {
-        logger.notice("Getting secrets")
-        val properties = Properties()
-        val inputStream = javaClass.classLoader.getResourceAsStream("service.properties")
-            ?: throw FileNotFoundException("service properties not found")
-        inputStream.use { withContext(Dispatchers.IO) { properties.load(inputStream) } }
-
-        val clientId = properties.getProperty("CRAYPAY_CLIENT_ID")
-        val clientSecret = properties.getProperty("CRAYPAY_CLIENT_SECRET")
-        require(clientId.isNotEmpty())
-        require(clientSecret.isNotEmpty())
-
-        logger.notice("Fetching CrayPay auth token")
-        return auth.getToken(clientId, clientSecret, "client_credentials", "dash_wallet_dev")
     }
 
     private fun convert(

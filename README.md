@@ -19,7 +19,7 @@ cd explore-dash-sync
 
 #### Build
 
-Generate executable [fat JAR](https://github.com/johnrengelman/shadow) `.\build\deploy\explore-dash-sync-app.jar`) which
+Generate executable [fat JAR](https://github.com/johnrengelman/shadow) `./build/deploy/explore-dash-sync-app.jar`) which
 can be launched locally
 
 ```
@@ -42,7 +42,7 @@ This command will generate `explore.dat` file in the current directory Supported
 
 #### Build
 
-Generate [fat JAR](https://github.com/johnrengelman/shadow) `.\build\deploy\explore-dash-sync-fun.jar` which can be
+Generate [fat JAR](https://github.com/johnrengelman/shadow) `./build/deploy/explore-dash-sync-fun.jar` which can be
 deployed to Google Cloud Platform ([BackgroundFunction](https://cloud.google.com/functions/docs/writing/background))
 
 ```
@@ -55,7 +55,7 @@ Base on [Deploying Cloud Functions](https://cloud.google.com/functions/docs/depl
 
 ```
 gcloud functions deploy dash-explore-sync-dev \
- --runtime=java11 \
+ --runtime=java17 \
  --entry-point=org.dash.mobile.explore.sync.Function \
  --source=build/deploy \ 
  --trigger-topic dash-explore-sync-trigger \

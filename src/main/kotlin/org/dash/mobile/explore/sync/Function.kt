@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.dash.mobile.explore.sync.process.DashDirectApiMode
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -17,18 +18,6 @@ class Function : BackgroundFunction<PubSubMessage?> {
     override fun accept(message: PubSubMessage?, context: Context) {
         val version = javaClass.getPackage().implementationVersion
         logger.info("Dash Explore Sync ver. $version")
-
-//        logger.info("message=$message")
-//
-//        val args = message?.run {
-//            String(Base64.getDecoder().decode(message.data))
-//        } ?: return
-//
-//        logger.info("${message}\t(data=$args)")
-
-        // {"data":"c3JjPXByb2QgZHN0PWRldg==", "attributes":[["atr1","val1"],["atr2","val2"]]}
-        // {"attributes":[["mode","testnet"]]}
-        // gcloud pubsub topics publish dash-explore-sync-trigger --message="src=prod dst=dev" --attribute=src=prod,dst=dev
 
         val mode = when (message?.attributes?.get("mode")) {
             "prod" -> OperationMode.PRODUCTION
@@ -44,7 +33,11 @@ class Function : BackgroundFunction<PubSubMessage?> {
                 launch(Dispatchers.IO) {
                     SyncProcessor(mode).syncData(
                         File("/tmp"),
-                        srcDev = false,
+                        apiMode = if (mode == OperationMode.TESTNET) {
+                            DashDirectApiMode.STAGING
+                        } else {
+                            DashDirectApiMode.PROD
+                        },
                         forceUpload = false,
                         quietMode = false // we need notifications
                     )

@@ -9,10 +9,9 @@ import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionLevel
 import net.lingala.zip4j.model.enums.EncryptionMethod
-import org.dash.mobile.explore.sync.process.CoinFlipDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
+import org.dash.mobile.explore.sync.process.DashDirectApiMode
 import org.dash.mobile.explore.sync.process.DashDirectDataSource
-import org.dash.mobile.explore.sync.process.data.AtmData
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
 import org.dash.mobile.explore.sync.process.data.MerchantData
@@ -43,7 +42,7 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @FlowPreview
-    suspend fun syncData(workingDir: File, srcDev: Boolean, forceUpload: Boolean, quietMode: Boolean) {
+    suspend fun syncData(workingDir: File, apiMode: DashDirectApiMode, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
         slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
 
@@ -59,7 +58,7 @@ class SyncProcessor(private val mode: OperationMode) {
             gcManager.createLockFile(mode.name)
 
             dbFile = createEmptyDB(workingDir)
-            importData(dbFile, srcDev)
+            importData(dbFile, apiMode)
 
             val dbFileChecksum = calculateChecksum(dbFile)
             logger.debug("DB file checksum $dbFileChecksum")
@@ -122,7 +121,7 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @Throws(SQLException::class)
-    private suspend fun importData(dbFile: File, srcDev: Boolean) {
+    private suspend fun importData(dbFile: File, srcDev: DashDirectApiMode) {
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
@@ -132,10 +131,19 @@ class SyncProcessor(private val mode: OperationMode) {
             val merchantDataFlow = flowOf(dcgDataFlow, dashDirectDataFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
-            prepStatement = dbConnection.prepareStatement(AtmData.INSERT_STATEMENT)
-            val coinFlipDataFlow = CoinFlipDataSource(slackMessenger).getData(prepStatement)
-            val atmDataFlow = flowOf(coinFlipDataFlow).flattenConcat()
-            syncData(atmDataFlow, prepStatement)
+            // TODO: temporary disabled until CoinFlip API is fixed. See TODO below also.
+//            prepStatement = dbConnection.prepareStatement(AtmData.INSERT_STATEMENT)
+//            val coinFlipDataFlow = CoinFlipDataSource(slackMessenger).getData(prepStatement)
+//            val atmDataFlow = flowOf(coinFlipDataFlow).flattenConcat()
+//            syncData(atmDataFlow, prepStatement)
+
+            prepStatement = dbConnection.prepareStatement("SELECT Count(*) FROM atm")
+            val rs = prepStatement.executeQuery()
+
+            if (rs.next()) {
+                val count = rs.getInt(1)
+                slackMessenger.postSlackMessage("CoinFlip: kept $count ATMs from the old data.")
+            }
         } catch (ex: SQLException) {
             logger.error(ex.message, ex)
             throw ex
@@ -155,7 +163,8 @@ class SyncProcessor(private val mode: OperationMode) {
         dbFile.createNewFile()
         logger.debug("Creating empty DB ${dbFile.absolutePath}")
 
-        val emptyDBStream = javaClass.classLoader.getResourceAsStream("explore-empty.db")
+        // TODO: replace with explore-empty.db once CoinFlip is fixed
+        val emptyDBStream = javaClass.classLoader.getResourceAsStream("explore-atms.db")
             ?: throw FileNotFoundException()
 
         emptyDBStream.use { input ->
