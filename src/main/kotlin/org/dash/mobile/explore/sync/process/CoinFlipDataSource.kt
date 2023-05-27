@@ -19,6 +19,7 @@ private const val BASE_URL = "https://storerocket.io/api/user/56wpZAy8An/"
 
 /**
  * Import data from CoinFlip API
+ * NOTE: this is not used anymore. See CoinAtmRadarDataSource
  */
 class CoinFlipDataSource(slackMessenger: SlackMessenger) : DataSource<AtmData>(slackMessenger) {
 
