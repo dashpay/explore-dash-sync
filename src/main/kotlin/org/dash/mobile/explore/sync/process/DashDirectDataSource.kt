@@ -4,10 +4,8 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
@@ -16,7 +14,6 @@ import org.slf4j.LoggerFactory
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
-import java.io.FileNotFoundException
 import java.io.IOException
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -40,6 +37,14 @@ enum class DashDirectApiMode {
             DEV -> "CRAYPAY_CLIENT_ID_DEV"
             STAGING -> "CRAYPAY_CLIENT_ID_STAGING"
             PROD -> "CRAYPAY_CLIENT_ID_PROD"
+        }
+    }
+
+    fun getAuthTokenPrefName(): String {
+        return when (this) {
+            DEV -> "CRAYPAY_AUTH_TOKEN_DEV"
+            STAGING -> "CRAYPAY_AUTH_TOKEN_STAGING"
+            PROD -> "CRAYPAY_AUTH_TOKEN_PROD"
         }
     }
 }
@@ -115,16 +120,11 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
     var invalid = 0
 
     override fun getRawData(): Flow<MerchantData> = flow {
-        logger.notice("Getting secrets")
-        val properties = Properties()
-        val inputStream = javaClass.classLoader.getResourceAsStream("service.properties")
-            ?: throw FileNotFoundException("service properties not found")
-        inputStream.use { withContext(Dispatchers.IO) { properties.load(inputStream) } }
-
+        val properties = getProperties()
         val clientId = properties.getProperty(apiMode.getClientIdPrefName())
-        val authToken = properties.getProperty("CRAYPAY_AUTH_TOKEN")
-        require(clientId.isNotEmpty())
-        require(authToken.isNotEmpty())
+        val authToken = properties.getProperty(apiMode.getAuthTokenPrefName())
+        require(clientId.isNotEmpty()) { "CrayPay ClientID is empty. Check service.properties" }
+        require(authToken.isNotEmpty()) { "CrayPay AuthToken is empty. Check service.properties" }
 
         logger.notice("Importing data from DashDirect (${apiMode.getBaseUrl()})")
 
