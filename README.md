@@ -79,12 +79,6 @@ Or for the testnet mode:
 gcloud pubsub topics publish explore-dash-sync-trigger --attribute="mode=testnet"
 ```
 
-Or for the testnet mode:
-
-```
-gcloud pubsub topics publish dash-explore-sync-trigger --attribute="mode=testnet"
-```
-
 ### Generating Protocol Buffer messages (`javalite`)
 
 - src: `./src/main/proto/`
