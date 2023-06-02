@@ -87,6 +87,14 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
             @Header("Authorization") token: String,
             @Body requestData: AllMerchantLocationsRequest
         ): AllMerchantLocationsResponse
+
+        // TODO: remove when migration is complete
+        @POST("Merchant/GetAllMerchantLocations")
+        suspend fun getAllMerchantLocationsOld(
+            @Header("apiKey") apiKey: String,
+            @Header("appKey") appKey: String,
+            @Body requestData: AllMerchantLocationsRequest
+        ): AllMerchantLocationsResponse
     }
 
     private val apiService: Endpoint
@@ -126,6 +134,14 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
         require(clientId.isNotEmpty())
         require(authToken.isNotEmpty())
 
+        // TODO: remove when migration is complete
+        var appKey = ""
+        if (apiMode == DashDirectApiMode.PROD) {
+            appKey = properties.getProperty("CRAYPAY_APP_KEY_PROD")
+            require(appKey.isNotEmpty())
+        }
+        // -- end TODO
+
         logger.notice("Importing data from DashDirect (${apiMode.getBaseUrl()})")
 
         val pageSize = 20000
@@ -135,12 +151,21 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
 
         while (currentPageIndex < totalPages) {
             try {
-                val response =
+                val response = if (apiMode == DashDirectApiMode.PROD) {
+                    // TODO remove when migration is complete
+                    apiService.getAllMerchantLocationsOld(
+                        clientId,
+                        appKey,
+                        Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
+                    )
+                } else {
                     apiService.getAllMerchantLocations(
                         clientId,
                         "Bearer $authToken",
                         Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
                     )
+                }
+
                 if (response.successful) {
                     val responseData = response.data
                     totalPages = responseData.totalPages + 1
