@@ -5,13 +5,18 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.withContext
+import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.Data
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.Logger
+import java.io.FileNotFoundException
 import java.io.InputStreamReader
 import java.sql.PreparedStatement
+import java.util.Properties
 
 abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data {
 
@@ -29,7 +34,6 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data 
     protected abstract fun getRawData(): Flow<T>
 
     fun getData(statement: PreparedStatement) = getRawData()
-//        .buffer()
         .transform { data ->
             data.transferInto(statement)
             emit(data)
@@ -58,6 +62,16 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data 
         }
     }
 
+    suspend fun getProperties(): Properties {
+        logger.notice("Getting secrets")
+        val properties = Properties()
+        val inputStream = javaClass.classLoader.getResourceAsStream("service.properties")
+            ?: throw FileNotFoundException("service properties not found")
+        inputStream.use { withContext(Dispatchers.IO) { properties.load(inputStream) } }
+
+        return properties
+    }
+
     /** replace state abbr and modified name with the classified one
      * e.g.
      * "AL" -> "Alabama"
@@ -71,5 +85,10 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data 
         // replace state abbr with the full name e.g. AL -> Alabama, etc.
         val inStateStr = inState.asString.replace(',', ' ').trim()
         usStatesAbbrMap[inStateStr] ?: inStateStr
+    }
+
+    fun fixStateName(stateAbbreviation: String): String {
+        val trimmed = stateAbbreviation.replace(',', ' ').trim()
+        return usStatesAbbrMap[trimmed] ?: stateAbbreviation
     }
 }
