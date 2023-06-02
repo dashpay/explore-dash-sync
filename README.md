@@ -29,7 +29,7 @@ can be launched locally
 #### Run
 
 ```
-java -jar .\build\deploy\explore-dash-sync-app.jar
+java -jar ./build/deploy/explore-dash-sync-app.jar
 ```
 
 This command will generate `explore.dat` file in the current directory Supported arguments:
@@ -54,11 +54,11 @@ deployed to Google Cloud Platform ([BackgroundFunction](https://cloud.google.com
 Base on [Deploying Cloud Functions](https://cloud.google.com/functions/docs/deploying)
 
 ```
-gcloud functions deploy dash-explore-sync-dev \
+gcloud functions deploy explore-dash-sync \
  --runtime=java17 \
  --entry-point=org.dash.mobile.explore.sync.Function \
  --source=build/deploy \ 
- --trigger-topic dash-explore-sync-trigger \
+ --trigger-topic explore-dash-sync-trigger \
  --allow-unauthenticated --memory=1024MB --timeout=300s
 ``` 
 
@@ -67,10 +67,16 @@ from https://console.cloud.google.com/functions/list?authuser=0&project=dash-wal
 
 #### Trigger function
 
-Function can be triggered by publishing `dash-explore-sync-trigger` PubSub topic
+Function can be triggered by publishing `explore-dash-sync-trigger` PubSub topic
 
 ```
-gcloud pubsub topics publish dash-explore-sync-trigger
+gcloud pubsub topics publish explore-dash-sync-trigger
+```
+
+Or for the testnet mode:
+
+```
+gcloud pubsub topics publish explore-dash-sync-trigger --attribute="mode=testnet"
 ```
 
 ### Generating Protocol Buffer messages (`javalite`)
