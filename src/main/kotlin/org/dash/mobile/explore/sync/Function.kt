@@ -33,11 +33,11 @@ class Function : BackgroundFunction<PubSubMessage?> {
                 launch(Dispatchers.IO) {
                     SyncProcessor(mode).syncData(
                         File("/tmp"),
-                        apiMode = if (mode == OperationMode.TESTNET) {
+                        apiMode = /*if (mode == OperationMode.TESTNET) {
                             DashDirectApiMode.STAGING
-                        } else {
-                            DashDirectApiMode.PROD
-                        },
+                        } else {*/
+                            DashDirectApiMode.PROD,
+//                        },
                         forceUpload = false,
                         quietMode = false // we need notifications
                     )
