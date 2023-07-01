@@ -132,13 +132,14 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
         val clientId = properties.getProperty(apiMode.getClientIdPrefName())
         val authToken = properties.getProperty("CRAYPAY_AUTH_TOKEN")
         require(clientId.isNotEmpty())
-        require(authToken.isNotEmpty())
 
         // TODO: remove when migration is complete
         var appKey = ""
         if (apiMode == DashDirectApiMode.PROD) {
             appKey = properties.getProperty("CRAYPAY_APP_KEY_PROD")
             require(appKey.isNotEmpty())
+        } else {
+            require(authToken.isNotEmpty())
         }
         // -- end TODO
 
