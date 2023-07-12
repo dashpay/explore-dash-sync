@@ -19,44 +19,12 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
 
-enum class DashDirectApiMode {
-    DEV,
-    STAGING,
-    PROD;
-
-    fun getBaseUrl(): String {
-        return when (this) {
-            DEV -> DEV_BASE_URL
-            STAGING -> STAGING_BASE_URL
-            PROD -> BASE_URL
-        }
-    }
-
-    fun getClientIdPrefName(): String {
-        return when (this) {
-            DEV -> "CRAYPAY_CLIENT_ID_DEV"
-            STAGING -> "CRAYPAY_CLIENT_ID_STAGING"
-            PROD -> "CRAYPAY_CLIENT_ID_PROD"
-        }
-    }
-
-    fun getAuthTokenPrefName(): String {
-        return when (this) {
-            DEV -> "CRAYPAY_AUTH_TOKEN_DEV"
-            STAGING -> "CRAYPAY_AUTH_TOKEN_STAGING"
-            PROD -> "CRAYPAY_AUTH_TOKEN_PROD"
-        }
-    }
-}
-
 private const val BASE_URL = "https://api.dashdirect.org/"
-private const val STAGING_BASE_URL = "https://apistaging.dashdirect.org/"
-private const val DEV_BASE_URL = "https://apidev.dashdirect.org/"
 
 /**
  * Import data from DashDirect API
  */
-class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenger: SlackMessenger) :
+class DashDirectDataSource(slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
 
     override val logger = LoggerFactory.getLogger(DashDirectDataSource::class.java)!!
@@ -85,15 +53,6 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
             @SerializedName("PageIndex") val pageIndex: Int
         )
 
-        @Headers("email: mobile@dash.org")
-        @POST("dashdirect/GetAllMerchantLocations")
-        suspend fun getAllMerchantLocations(
-            @Header("clientId") clientId: String,
-            @Header("Authorization") token: String,
-            @Body requestData: AllMerchantLocationsRequest
-        ): AllMerchantLocationsResponse
-
-        // TODO: remove when migration is complete
         @POST("Merchant/GetAllMerchantLocations")
         suspend fun getAllMerchantLocationsOld(
             @Header("apiKey") apiKey: String,
@@ -116,7 +75,7 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(apiMode.getBaseUrl())
+            .baseUrl(BASE_URL)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
@@ -129,20 +88,12 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
 
     override fun getRawData(): Flow<MerchantData> = flow {
         val properties = getProperties()
-        val clientId = properties.getProperty(apiMode.getClientIdPrefName())
-        val authToken = properties.getProperty(apiMode.getAuthTokenPrefName())
-        require(clientId.isNotEmpty()) { "CrayPay ClientID is empty. Check service.properties" }
-        require(authToken.isNotEmpty()) { "CrayPay AuthToken is empty. Check service.properties" }
+        val clientId = properties.getProperty("CRAYPAY_CLIENT_ID_PROD")
+        val appKey = properties.getProperty("CRAYPAY_APP_KEY_PROD")
+        require(clientId.isNotEmpty())
+        require(appKey.isNotEmpty())
 
-        // TODO: remove when migration is complete
-        var appKey = ""
-        if (apiMode == DashDirectApiMode.PROD) {
-            appKey = properties.getProperty("CRAYPAY_APP_KEY_PROD")
-            require(appKey.isNotEmpty())
-        }
-        // -- end TODO
-
-        logger.notice("Importing data from DashDirect (${apiMode.getBaseUrl()})")
+        logger.notice("Importing data from DashDirect ($BASE_URL)")
 
         val pageSize = 20000
         var currentPageIndex = 1
@@ -151,20 +102,11 @@ class DashDirectDataSource(private val apiMode: DashDirectApiMode, slackMessenge
 
         while (currentPageIndex < totalPages) {
             try {
-                val response = if (apiMode == DashDirectApiMode.PROD) {
-                    // TODO remove when migration is complete
-                    apiService.getAllMerchantLocationsOld(
-                        clientId,
-                        appKey,
-                        Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
-                    )
-                } else {
-                    apiService.getAllMerchantLocations(
-                        clientId,
-                        "Bearer $authToken",
-                        Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
-                    )
-                }
+                val response = apiService.getAllMerchantLocationsOld(
+                    clientId,
+                    appKey,
+                    Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
+                )
 
                 if (response.successful) {
                     val responseData = response.data

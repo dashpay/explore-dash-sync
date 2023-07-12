@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.dash.mobile.explore.sync.process.DashDirectApiMode
 import org.slf4j.LoggerFactory
 import java.io.File
 
@@ -33,11 +32,6 @@ class Function : BackgroundFunction<PubSubMessage?> {
                 launch(Dispatchers.IO) {
                     SyncProcessor(mode).syncData(
                         File("/tmp"),
-                        apiMode = if (mode == OperationMode.TESTNET) {
-                            DashDirectApiMode.STAGING
-                        } else {
-                            DashDirectApiMode.PROD
-                        },
                         forceUpload = false,
                         quietMode = false // we need notifications
                     )

@@ -11,8 +11,6 @@ import net.lingala.zip4j.model.enums.CompressionLevel
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinAtmRadarDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
-import org.dash.mobile.explore.sync.process.DashDirectApiMode
-import org.dash.mobile.explore.sync.process.DashDirectDataSource
 import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
@@ -43,7 +41,7 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @FlowPreview
-    suspend fun syncData(workingDir: File, apiMode: DashDirectApiMode, forceUpload: Boolean, quietMode: Boolean) {
+    suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
         slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
 
@@ -59,7 +57,7 @@ class SyncProcessor(private val mode: OperationMode) {
             gcManager.createLockFile(mode.name)
 
             dbFile = createEmptyDB(workingDir)
-            importData(dbFile, apiMode)
+            importData(dbFile)
 
             val dbFileChecksum = calculateChecksum(dbFile)
             logger.debug("DB file checksum $dbFileChecksum")
@@ -122,13 +120,12 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @Throws(SQLException::class)
-    private suspend fun importData(dbFile: File, srcDev: DashDirectApiMode) {
+    private suspend fun importData(dbFile: File) {
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
-            val dashDirectDataFlow = DashDirectDataSource(srcDev, slackMessenger).getData(prepStatement)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val merchantDataFlow = flowOf(dcgDataFlow, dashDirectDataFlow).flattenConcat()
+            val merchantDataFlow = flowOf(dcgDataFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
