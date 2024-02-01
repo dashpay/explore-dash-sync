@@ -11,6 +11,7 @@ import net.lingala.zip4j.model.enums.CompressionLevel
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinAtmRadarDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
+import org.dash.mobile.explore.sync.process.DashDirectDataSource
 import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
@@ -63,9 +64,9 @@ class SyncProcessor(private val mode: OperationMode) {
             logger.debug("DB file checksum $dbFileChecksum")
 
             val dbZipFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}.zip"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-testnet.zip"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-devnet.zip"
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v2.zip"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v2-testnet.zip"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v2-devnet.zip"
             }
 
             val dbZipFile = File(workingDir, dbZipFileName)
@@ -125,7 +126,8 @@ class SyncProcessor(private val mode: OperationMode) {
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val merchantDataFlow = flowOf(dcgDataFlow).flattenConcat()
+            val dashDirectDataFlow = DashDirectDataSource(slackMessenger).getData(prepStatement)
+            val merchantDataFlow = flowOf(dcgDataFlow, dashDirectDataFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)

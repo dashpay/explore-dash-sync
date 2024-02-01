@@ -86,7 +86,7 @@ class CoinFlipDataSource(slackMessenger: SlackMessenger) : DataSource<AtmData>(s
             website = "https://coinflip.tech/bitcoin-atm?location=${inData.get("slug").asString}"
             phone = convertJsonData("phone", inData)
             val inState = inData.get("state")
-            fixStatName(inState)?.apply {
+            fixStateName(inState)?.apply {
                 territory = this
             }
             city = convertJsonData("city", inData)

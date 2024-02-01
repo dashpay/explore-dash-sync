@@ -14,7 +14,7 @@ import java.io.IOException
 private const val GC_PROJECT_ID = "dash-wallet-firebase"
 
 private const val GCS_BUCKET_NAME = "dash-wallet-firebase.appspot.com"
-private const val GCS_LOCK_FILE_NAME = "explore/.lock"
+private const val GCS_LOCK_FILE_NAME = "explore/v2.lock"
 
 const val CHECKSUM_META_KEY = "Data-Checksum"
 const val TIMESTAMP_META_KEY = "Data-Timestamp"

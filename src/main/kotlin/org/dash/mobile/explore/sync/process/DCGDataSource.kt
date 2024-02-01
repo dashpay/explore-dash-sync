@@ -104,7 +104,8 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
 //            addDate = null
 //            updateDate = null
             paymentMethod = convert(rowData, ColHeader.PAYMENT_METHOD)
-            merchantId = convert<Int?>(rowData, ColHeader.MERCHANT_ID)?.toLong()
+            val merchantIdAsLong = convert<Int?>(rowData, ColHeader.MERCHANT_ID)?.toLong()
+            merchantId = merchantIdAsLong.toString()
 //            id = null
             active = convert(rowData, ColHeader.ACTIVE)
             name = convert(rowData, ColHeader.NAME)
@@ -121,7 +122,8 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             }
 //            city = null
             source = "DCG"
-            sourceId = convert(rowData, ColHeader.SOURCE_ID)
+            val sourceIdAsInt:Int = convert(rowData, ColHeader.SOURCE_ID) ?: 0
+            sourceId = sourceIdAsInt.toString()
             logoLocation = convert(rowData, ColHeader.LOGO_LOCATION)
             googleMaps = convert(rowData, ColHeader.GOOGLE_MAPS)
             coverImage = null

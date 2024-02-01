@@ -42,7 +42,7 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data 
     inline fun <reified T> convertJsonData(inKey: String, inData: JsonObject): T? {
         return try {
             val data = inData.get(inKey)
-            if (data.isJsonNull) {
+            if (data == null || data.isJsonNull) {
                 return null
             }
             val primitiveData = inData.get(inKey).asJsonPrimitive
@@ -79,7 +79,7 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data 
      * "New,Hampshire " -> "New Hampshire"
      * etc.
      */
-    fun fixStatName(inState: JsonElement) = if (inState.isJsonNull || inState.asString.isEmpty()) {
+    fun fixStateName(inState: JsonElement) = if (inState.isJsonNull || inState.asString.isEmpty()) {
         null
     } else {
         // replace state abbr with the full name e.g. AL -> Alabama, etc.
