@@ -2,15 +2,18 @@ package org.dash.mobile.explore.sync.process
 
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
@@ -19,7 +22,7 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
 
-private const val BASE_URL = "https://api.dashdirect.org/"
+private const val BASE_URL = "https://spend.ctx.com/"
 
 /**
  * Import data from DashDirect API
@@ -49,16 +52,29 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
         )
 
         data class AllMerchantLocationsRequest(
-            @SerializedName("PageSize") val pageSize: Int,
-            @SerializedName("PageIndex") val pageIndex: Int
+            @SerializedName("pageSize") val pageSize: Int,
+            @SerializedName("pageIndex") val pageIndex: Int
         )
 
-        @POST("Merchant/GetAllMerchantLocations")
+        data class Pagination(
+            val page: Int,
+            val pages: Int,
+            val perPage: Int,
+            val total: Int
+        )
+
+        data class MerchantsResponse(
+            @SerializedName("pagination") val pagination: Pagination,
+            @SerializedName("result") val result: JsonArray,
+        )
+
+        @GET("merchants")
         suspend fun getAllMerchantLocationsOld(
-            @Header("apiKey") apiKey: String,
-            @Header("appKey") appKey: String,
-            @Body requestData: AllMerchantLocationsRequest
-        ): AllMerchantLocationsResponse
+            @Header("X-Api-Key") apiKey: String,
+            @Header("X-Api-Secret") appKey: String,
+            // TODO: pagination not tested
+            // @Body requestData: AllMerchantLocationsRequest
+        ): MerchantsResponse
     }
 
     private val apiService: Endpoint
@@ -72,6 +88,11 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
             .connectTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .also { client ->
+                val logging = HttpLoggingInterceptor { message -> println(message) }
+                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                client.addInterceptor(logging)
+            }
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
@@ -88,12 +109,12 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
 
     override fun getRawData(): Flow<MerchantData> = flow {
         val properties = getProperties()
-        val clientId = properties.getProperty("CRAYPAY_CLIENT_ID_PROD")
-        val appKey = properties.getProperty("CRAYPAY_APP_KEY_PROD")
-        require(clientId.isNotEmpty())
-        require(appKey.isNotEmpty())
+        val apiKey = properties.getProperty("X-Api-Key")
+        val apiSecret = properties.getProperty("X-Api-Secret")
+        require(apiKey.isNotEmpty())
+        require(apiSecret.isNotEmpty())
 
-        logger.notice("Importing data from DashDirect ($BASE_URL)")
+        logger.notice("Importing data from CTX Spend ($BASE_URL)")
 
         val pageSize = 20000
         var currentPageIndex = 1
@@ -103,27 +124,27 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
         while (currentPageIndex < totalPages) {
             try {
                 val response = apiService.getAllMerchantLocationsOld(
-                    clientId,
-                    appKey,
-                    Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
+                    apiKey,
+                    apiSecret,
+                    // Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
                 )
 
-                if (response.successful) {
-                    val responseData = response.data
-                    totalPages = responseData.totalPages + 1
-                    currentPageIndex = responseData.currentPageIndex + 1
+                if (!response.result.isJsonNull && !response.result.isEmpty) {
+                    val responseData = response.result
+                    val pagination = response.pagination
+                    totalPages = pagination.pages + 1
+                    currentPageIndex = pagination.page + 1
                     var currentRows = 0
-                    responseData.merchants.forEach { merchant ->
-                        currentRows += merchant.locations.size()
-                    }
+                    currentRows = responseData.size()
                     logger.info("DashDirect ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
-                    logger.info("DashDirect.totalRows: ${responseData.totalRows}")
+                    logger.info("DashDirect.totalRows: ${pagination.total}")
 
-                    responseData.merchants.forEach { merchant ->
-                        merchant.locations.forEach { location ->
-                            val locationData = location.asJsonObject
-
-                            if (locationData.get("IsActive").asBoolean) {
+                    responseData.forEach { merchant ->
+                        val location = merchant
+                        val locationData = location.asJsonObject
+                            // TODO: does this properly count inactive locations
+                            // does CTX mark them as inactive?
+                            //if (locationData.get("IsActive").asBoolean) {
                                 val type = getType(merchant)
 
                                 if (isValidLocation(type, locationData)) {
@@ -138,17 +159,20 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
                                 } else {
                                     invalid++
                                 }
-                            } else {
-                                inactive++
-                            }
+                            //} else {
+                            //    inactive++
+                            //}
                         }
-                    }
+
                 } else {
                     logger.error("error: $response")
                     break
                 }
             } catch (ex: IOException) {
                 logger.error(ex.message, ex)
+            } catch (ex: HttpException) {
+                logger.error(ex.message, ex)
+                throw ex
             }
         }
         logger.notice("DashDirect - imported $counter records (inactive $inactive, invalid $invalid)")
@@ -156,40 +180,43 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
     }
 
     private fun convert(
-        merchant: Endpoint.MerchantData,
+        merchant: JsonElement,
         location: JsonObject
     ): MerchantData {
-        val merchantData = merchant.merchant
+        val merchantData = merchant.asJsonObject
 
         return MerchantData().apply {
-            deeplink = convertJsonData("DeepLink", merchantData)
+            deeplink = convertJsonData("deeplink", merchantData)
 //            plusCode = null
 //            addDate = null
 //            updateDate = null
             paymentMethod = "gift card"
-            merchantId = convertJsonData("Id", merchantData)
+            merchantId = convertJsonData("merchantId", merchantData)
             active = true
-            name = convertJsonData("LegalName", merchantData)
+            name = convertJsonData("name", merchantData)
             address1 = getAddress1(location)
             address2 = getAddress2(location)
-            address3 = convertJsonData("PostalCode", location)
+            address3 = convertJsonData("postalCode", location)
             //            address4 = null
             latitude = getLatitude(location)
             longitude = getLongitude(location)
-            website = convertJsonData("Website", merchantData)
-            phone = convertJsonData("Phone", location)
-            val inState = location.get("State")
-            fixStatName(inState)?.apply {
-                territory = this
+            website = convertJsonData("website", merchantData)
+            phone = convertJsonData("phone", location)
+            val inState = location.get("territory")
+            inState?.let {
+                fixStateName(inState)?.apply {
+                    territory = this
+                }
             }
-            city = convertJsonData("City", location)
-            source = "DashDirect"
-            sourceId = convertJsonData("Id", location)
-            logoLocation = convertJsonData("LogoUrl", merchantData)
+            city = convertJsonData("city", location)
+            source = "CTXSpend"
+            sourceId = convertJsonData("sourceId", location)
+            logoLocation = convertJsonData("logoUrl", merchantData)
 //            googleMaps = null
-            coverImage = convertJsonData("CardImageUrl", merchantData)
+            coverImage = convertJsonData("cardImageUrl", merchantData)
             type = getType(merchant)
 
+            // TODO: Does CTX have these fields?
             monOpen = convertJsonData("MondayOpen", location)
             monClose = convertJsonData("MondayClose", location)
             tueOpen = convertJsonData("TuesdayOpen", location)
@@ -225,15 +252,15 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
         return !isAddress1Empty || !isAddress2Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }
 
-    private fun getType(merchant: Endpoint.MerchantData): String? {
-        val merchantData = merchant.merchant
-        val totalLocations = merchant.locations.size()
-        val isPhysical = merchantData.getAsJsonPrimitive("IsPhysical").asBoolean
-        val isOnline = merchantData.getAsJsonPrimitive("IsOnline").asBoolean
+    private fun getType(merchant: JsonElement): String? {
+        val merchantData = merchant
+        //val totalLocations = merchant.locations.size()
+        val isPhysical = merchantData.asJsonObject["type"].asString == "physical"
+        val isOnline = merchantData.asJsonObject["type"].asString == "online"
         return when {
             isPhysical && isOnline -> "both"
             isPhysical -> "physical"
-            isOnline && totalLocations > 1 -> "both"
+            //isOnline && totalLocations > 1 -> "both"
             isOnline -> "online"
             else -> {
                 logger.error("Merchant has invalid type:\n$merchantData")
@@ -243,18 +270,18 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
     }
 
     private fun getAddress1(location: JsonObject): String? {
-        return convertJsonData("Address1", location)
+        return convertJsonData("address1", location)
     }
 
     private fun getAddress2(location: JsonObject): String? {
-        return convertJsonData("Address2", location)
+        return convertJsonData("address2", location)
     }
 
     private fun getLatitude(location: JsonObject): Double? {
-        return convertJsonData("GpsLat", location)
+        return convertJsonData("latitude", location)
     }
 
     private fun getLongitude(location: JsonObject): Double? {
-        return convertJsonData("GpsLong", location)
+        return convertJsonData("longitude", location)
     }
 }
