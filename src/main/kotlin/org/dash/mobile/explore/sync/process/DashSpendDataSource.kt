@@ -25,12 +25,12 @@ import kotlin.collections.ArrayList
 private const val BASE_URL = "https://spend.ctx.com/"
 
 /**
- * Import data from DashDirect API
+ * Import data from DashSpend API
  */
-class DashDirectDataSource(slackMessenger: SlackMessenger) :
+class DashSpendDataSource(slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
 
-    override val logger = LoggerFactory.getLogger(DashDirectDataSource::class.java)!!
+    override val logger = LoggerFactory.getLogger(DashSpendDataSource::class.java)!!
 
     interface Endpoint {
         data class AllMerchantLocationsResponse(
@@ -136,8 +136,8 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
                     currentPageIndex = pagination.page + 1
                     var currentRows = 0
                     currentRows = responseData.size()
-                    logger.info("DashDirect ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
-                    logger.info("DashDirect.totalRows: ${pagination.total}")
+                    logger.info("DashSpend ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
+                    logger.info("DashSpend.totalRows: ${pagination.total}")
 
                     responseData.forEach { merchant ->
                         val location = merchant
@@ -175,8 +175,8 @@ class DashDirectDataSource(slackMessenger: SlackMessenger) :
                 throw ex
             }
         }
-        logger.notice("DashDirect - imported $counter records (inactive $inactive, invalid $invalid)")
-        slackMessenger.postSlackMessage("DashDirect $counter records")
+        logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid)")
+        slackMessenger.postSlackMessage("DashSpend $counter records")
     }
 
     private fun convert(
