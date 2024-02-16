@@ -215,6 +215,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
 //            googleMaps = null
             coverImage = convertJsonData("cardImageUrl", merchantData)
             type = getType(merchant)
+            redeemType = convertJsonData("redeemType", merchantData)
 
             // TODO: Does CTX have these fields?
             monOpen = convertJsonData("MondayOpen", location)
