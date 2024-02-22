@@ -128,7 +128,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             googleMaps = convert(rowData, ColHeader.GOOGLE_MAPS)
             coverImage = null
             type = convert(rowData, ColHeader.TYPE)
-
+            redeemType = "none"
             instagram = convert(rowData, ColHeader.INSTAGRAM)
             twitter = convert(rowData, ColHeader.TWITTER)
             delivery = convert(rowData, ColHeader.DELIVERY)
