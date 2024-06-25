@@ -16,6 +16,7 @@ fun main(args: Array<String>) {
 
     var upload = false
     var quietMode = false
+    var prodMode = false
 
     if (args.isNotEmpty()) {
         for (arg in args) {
@@ -28,11 +29,12 @@ fun main(args: Array<String>) {
         }
         upload = args.contains(UPLOAD_ARG)
         quietMode = args.contains(QUIET_ARG)
+        prodMode = args.contains(PROD_ARG)
     }
 
     runBlocking {
         launch(Dispatchers.IO) {
-            SyncProcessor(OperationMode.TESTNET)
+            SyncProcessor(if (prodMode) OperationMode.PRODUCTION else OperationMode.TESTNET)
                 .syncData(File("."), upload, quietMode)
         }
     }
