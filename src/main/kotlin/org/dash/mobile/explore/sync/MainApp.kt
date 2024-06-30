@@ -9,10 +9,11 @@ import kotlin.system.exitProcess
 
 const val UPLOAD_ARG = "-upload"
 const val QUIET_ARG = "-quiet"
+const val PROD_ARG = "-prod"
 
 @FlowPreview
 fun main(args: Array<String>) {
-    val validParams = setOf(UPLOAD_ARG, QUIET_ARG)
+    val validParams = setOf(UPLOAD_ARG, QUIET_ARG, PROD_ARG)
 
     var upload = false
     var quietMode = false
