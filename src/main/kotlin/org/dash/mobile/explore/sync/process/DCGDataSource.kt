@@ -33,14 +33,14 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
     override fun getRawData(): Flow<MerchantData> = flow {
         logger.notice(
             "Importing data from Google Sheet " +
-                "https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
+                    "https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA"
         )
 
         // Load Service user credentials
         val resourceStream = javaClass.classLoader.getResourceAsStream(CREDENTIALS_FILE_PATH)
             ?: throw FileNotFoundException(
                 "Google API credentials ($CREDENTIALS_FILE_PATH) not found." +
-                    "You can download it from https://console.cloud.google.com/apis/credentials"
+                        "You can download it from https://console.cloud.google.com/apis/credentials"
             )
         val credentials = GoogleCredentials.fromStream(resourceStream)
             .createScoped(SheetsScopes.SPREADSHEETS_READONLY)
@@ -103,7 +103,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             plusCode = convert(rowData, ColHeader.PLUS_CODE)
 //            addDate = null
 //            updateDate = null
-            paymentMethod = convert(rowData, ColHeader.PAYMENT_METHOD)
+            paymentMethod = convert<String?>(rowData, ColHeader.PAYMENT_METHOD)?.trim()
             merchantId = convert<Int?>(rowData, ColHeader.MERCHANT_ID)?.toLong()
 //            id = null
             active = convert(rowData, ColHeader.ACTIVE)
@@ -117,7 +117,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             website = convert(rowData, ColHeader.WEBSITE)
             phone = convert(rowData, ColHeader.PHONE)
             convert<String?>(rowData, ColHeader.TERRITORY)?.apply {
-                territory = this
+                territory = this.trim()
             }
 //            city = null
             source = "DCG"
@@ -125,7 +125,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             logoLocation = convert(rowData, ColHeader.LOGO_LOCATION)
             googleMaps = convert(rowData, ColHeader.GOOGLE_MAPS)
             coverImage = null
-            type = convert(rowData, ColHeader.TYPE)
+            type = convert<String?>(rowData, ColHeader.TYPE)?.trim()
 
             instagram = convert(rowData, ColHeader.INSTAGRAM)
             twitter = convert(rowData, ColHeader.TWITTER)
