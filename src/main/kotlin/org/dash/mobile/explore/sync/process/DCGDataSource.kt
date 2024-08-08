@@ -217,6 +217,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
         TWITTER,
         DELIVERY,
         ACTIVE,
-        MERCHANT_ID
+        MERCHANT_ID,
+        SAVINGS_PERCENTAGE,
     }
 }

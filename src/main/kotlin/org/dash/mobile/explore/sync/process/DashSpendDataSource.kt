@@ -18,7 +18,6 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.io.IOException
-import java.util.*
 import java.util.concurrent.TimeUnit
 import kotlin.collections.ArrayList
 
@@ -33,18 +32,18 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
     override val logger = LoggerFactory.getLogger(DashSpendDataSource::class.java)!!
 
     interface Endpoint {
-        data class AllMerchantLocationsResponse(
-            @SerializedName("Successful") val successful: Boolean,
-            @SerializedName("ErrorMessage") val errorMessage: String,
-            @SerializedName("Data") val data: AllMerchantLocationsResponseData
-        )
-
-        data class AllMerchantLocationsResponseData(
-            @SerializedName("Merchants") val merchants: ArrayList<MerchantData>,
-            @SerializedName("TotalRows") val totalRows: Int,
-            @SerializedName("TotalPages") val totalPages: Int,
-            @SerializedName("CurrentPageIndex") val currentPageIndex: Int
-        )
+//        data class AllMerchantLocationsResponse(
+//            @SerializedName("Successful") val successful: Boolean,
+//            @SerializedName("ErrorMessage") val errorMessage: String,
+//            @SerializedName("Data") val data: AllMerchantLocationsResponseData
+//        )
+//
+//        data class AllMerchantLocationsResponseData(
+//            @SerializedName("Merchants") val merchants: ArrayList<MerchantData>,
+//            @SerializedName("TotalRows") val totalRows: Int,
+//            @SerializedName("TotalPages") val totalPages: Int,
+//            @SerializedName("CurrentPageIndex") val currentPageIndex: Int
+//        )
 
         data class MerchantData(
             @SerializedName("Merchant") val merchant: JsonObject,
@@ -52,8 +51,20 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
         )
 
         data class AllMerchantLocationsRequest(
-            @SerializedName("pageSize") val pageSize: Int,
-            @SerializedName("pageIndex") val pageIndex: Int
+            @SerializedName("perPage") val pageSize: Int,
+            @SerializedName("page") val pageIndex: Int
+        )
+
+        data class Merchant(
+            val address1: String,
+            val country: String,
+            val merchantId: String,
+            val name: String,
+            val paymentMethod: String,
+            val redeemType: String,
+            val source: String,
+            val sourceId: String,
+            val type: String
         )
 
         data class Pagination(
@@ -73,8 +84,17 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
             @Header("X-Api-Key") apiKey: String,
             @Header("X-Api-Secret") appKey: String,
             // TODO: pagination not tested
-            // @Body requestData: AllMerchantLocationsRequest
+            @Query("perPage") perPage: Int = 20,
+            @Query("page") page: Int = 1
         ): MerchantsResponse
+
+        @GET("dcg/locations")
+        suspend fun getAllMerchantLocationsNew(
+            @Header("X-Api-Key") apiKey: String,
+            @Header("X-Api-Secret") appKey: String,
+            // TODO: pagination not tested
+            // @Body requestData: AllMerchantLocationsRequest
+        ): JsonArray
     }
 
     private val apiService: Endpoint
@@ -116,17 +136,20 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
 
         logger.notice("Importing data from CTX Spend ($BASE_URL)")
 
-        val pageSize = 20000
+        val pageSize = 100
         var currentPageIndex = 1
         var totalPages = currentPageIndex + 1
         var counter = 0
+
+        val merchants = linkedMapOf<String, JsonObject>()
 
         while (currentPageIndex < totalPages) {
             try {
                 val response = apiService.getAllMerchantLocationsOld(
                     apiKey,
                     apiSecret,
-                    // Endpoint.AllMerchantLocationsRequest(pageSize, currentPageIndex)
+                    pageSize,
+                    currentPageIndex
                 )
 
                 if (!response.result.isJsonNull && !response.result.isEmpty) {
@@ -136,33 +159,16 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                     currentPageIndex = pagination.page + 1
                     var currentRows = 0
                     currentRows = responseData.size()
-                    logger.info("DashSpend ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
-                    logger.info("DashSpend.totalRows: ${pagination.total}")
+                    logger.info("DashSpend Merchants ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
+                    logger.info("DashSpend Merchants / totalRows: ${pagination.total}")
 
                     responseData.forEach { merchant ->
-                        val location = merchant
-                        val locationData = location.asJsonObject
-                            // TODO: does this properly count inactive locations
-                            // does CTX mark them as inactive?
-                            //if (locationData.get("IsActive").asBoolean) {
-                                val type = getType(merchant)
-
-                                if (isValidLocation(type, locationData)) {
-                                    counter++
-                                    val merchantData = convert(merchant, locationData)
-
-                                    if (merchantData.name.isNullOrEmpty()) {
-                                        invalid++
-                                    } else {
-                                        emit(merchantData)
-                                    }
-                                } else {
-                                    invalid++
-                                }
-                            //} else {
-                            //    inactive++
-                            //}
+                        val merchantData = merchant.asJsonObject
+                        if (merchants.containsKey(merchantData["id"].asString)) {
+                            logger.warn("merchant already exists")
                         }
+                        merchants[merchantData["id"].asString] = merchantData.deepCopy()
+                    }
 
                 } else {
                     logger.error("error: $response")
@@ -175,13 +181,48 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                 throw ex
             }
         }
+        // load locations
+        counter = 0
+        val locationResponse = apiService.getAllMerchantLocationsNew(apiKey, apiSecret)
+
+        if (!locationResponse.isJsonNull && !locationResponse.isEmpty) {
+            logger.info("DashSpend Locations: ${locationResponse.size()}")
+
+            locationResponse.forEach { location ->
+                //val location = location
+                val locationData = location.asJsonObject
+
+                // do we have the merchant information
+                val merchantId = locationData["merchantId"]
+                merchants[merchantId.asString]?.let { merchant ->
+                    // TODO: does this properly count inactive locations
+                    // does CTX mark them as inactive?
+                    //if (locationData.get("IsActive").asBoolean) {
+                    val type = getType(merchant, locationData)
+
+                    if (isValidLocation(type, locationData)) {
+                        counter++
+                        val merchantData = convert(merchant, locationData)
+
+                        if (merchantData.name.isNullOrEmpty()) {
+                            invalid++
+                        } else {
+                            emit(merchantData)
+                        }
+                    } else {
+                        invalid++
+                    }
+                } ?: logger.warn("merchant id not found: {}", merchantId)
+            }
+        }
+
         logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid)")
         slackMessenger.postSlackMessage("DashSpend $counter records")
     }
 
     private fun convert(
-        merchant: JsonElement,
-        location: JsonObject
+        merchant: JsonObject,
+        location: JsonObject,
     ): MerchantData {
         val merchantData = merchant.asJsonObject
 
@@ -191,7 +232,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
 //            addDate = null
 //            updateDate = null
             paymentMethod = "gift card"
-            merchantId = convertJsonData("merchantId", merchantData)
+            merchantId = convertJsonData("id", merchantData)
             active = true
             name = convertJsonData("name", merchantData)
             address1 = getAddress1(location)
@@ -214,8 +255,9 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
             logoLocation = convertJsonData("logoUrl", merchantData)
 //            googleMaps = null
             coverImage = convertJsonData("cardImageUrl", merchantData)
-            type = getType(merchant)
+            type = getType(merchant, location)
             redeemType = convertJsonData("redeemType", merchantData)
+            savingsPercentage = convertJsonData("savingsPercentage", merchantData)
 
             // TODO: Does CTX have these fields?
             monOpen = convertJsonData("MondayOpen", location)
@@ -253,18 +295,17 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
         return !isAddress1Empty || !isAddress2Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }
 
-    private fun getType(merchant: JsonElement): String? {
-        val merchantData = merchant
-        //val totalLocations = merchant.locations.size()
-        val isPhysical = merchantData.asJsonObject["type"].asString == "physical"
-        val isOnline = merchantData.asJsonObject["type"].asString == "online"
+    private fun getType(merchant: JsonObject, location: JsonObject): String? {
+
+        val isPhysical = merchant["type"].asString == "physical"
+        val isOnline = merchant["type"].asString == "online"
         return when {
             isPhysical && isOnline -> "both"
             isPhysical -> "physical"
-            //isOnline && totalLocations > 1 -> "both"
+            isOnline && location["address1"].asString != "online" -> "physical" // CTX marks all merchants as online, but if the location has an address, then it is physical
             isOnline -> "online"
             else -> {
-                logger.error("Merchant has invalid type:\n$merchantData")
+                logger.error("Merchant has invalid type:\n$merchant")
                 null
             }
         }
