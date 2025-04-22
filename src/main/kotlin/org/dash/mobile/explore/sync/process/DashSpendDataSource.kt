@@ -177,7 +177,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                 } ?: logMissingMerchant(merchantId, merchants)
             }
         }
-        logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid)")
+        logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid, missing ${missingMerchants})")
         slackMessenger.postSlackMessage("DashSpend $counter records")
     }
 
