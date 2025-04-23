@@ -19,7 +19,6 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.collections.ArrayList
 
 private const val BASE_URL = "https://spend.ctx.com/"
 
@@ -32,41 +31,6 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
     override val logger = LoggerFactory.getLogger(DashSpendDataSource::class.java)!!
 
     interface Endpoint {
-//        data class AllMerchantLocationsResponse(
-//            @SerializedName("Successful") val successful: Boolean,
-//            @SerializedName("ErrorMessage") val errorMessage: String,
-//            @SerializedName("Data") val data: AllMerchantLocationsResponseData
-//        )
-//
-//        data class AllMerchantLocationsResponseData(
-//            @SerializedName("Merchants") val merchants: ArrayList<MerchantData>,
-//            @SerializedName("TotalRows") val totalRows: Int,
-//            @SerializedName("TotalPages") val totalPages: Int,
-//            @SerializedName("CurrentPageIndex") val currentPageIndex: Int
-//        )
-
-        data class MerchantData(
-            @SerializedName("Merchant") val merchant: JsonObject,
-            @SerializedName("Locations") val locations: JsonArray
-        )
-
-        data class AllMerchantLocationsRequest(
-            @SerializedName("perPage") val pageSize: Int,
-            @SerializedName("page") val pageIndex: Int
-        )
-
-        data class Merchant(
-            val address1: String,
-            val country: String,
-            val merchantId: String,
-            val name: String,
-            val paymentMethod: String,
-            val redeemType: String,
-            val source: String,
-            val sourceId: String,
-            val type: String
-        )
-
         data class Pagination(
             val page: Int,
             val pages: Int,
@@ -80,7 +44,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
         )
 
         @GET("merchants")
-        suspend fun getAllMerchantLocationsOld(
+        suspend fun getAllMerchants(
             @Header("X-Api-Key") apiKey: String,
             @Header("X-Api-Secret") appKey: String,
             // TODO: pagination not tested
@@ -89,11 +53,9 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
         ): MerchantsResponse
 
         @GET("dcg/locations")
-        suspend fun getAllMerchantLocationsNew(
+        suspend fun getAllMerchantLocations(
             @Header("X-Api-Key") apiKey: String,
             @Header("X-Api-Secret") appKey: String,
-            // TODO: pagination not tested
-            // @Body requestData: AllMerchantLocationsRequest
         ): JsonArray
     }
 
@@ -145,7 +107,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
 
         while (currentPageIndex < totalPages) {
             try {
-                val response = apiService.getAllMerchantLocationsOld(
+                val response = apiService.getAllMerchants(
                     apiKey,
                     apiSecret,
                     pageSize,
@@ -167,9 +129,13 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                         if (merchants.containsKey(merchantData["id"].asString)) {
                             logger.warn("merchant already exists")
                         }
-                        merchants[merchantData["id"].asString] = merchantData.deepCopy()
+                        // if a merchant is disabled, then exclude it from the merchant list
+                        // CTX will exclude the locations from the locations API response
+                        val disabled = !merchantData["enabled"].asBoolean
+                        if (!disabled) {
+                            merchants[merchantData["id"].asString] = merchantData.deepCopy()
+                        }
                     }
-
                 } else {
                     logger.error("error: $response")
                     break
@@ -183,28 +149,24 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
         }
         // load locations
         counter = 0
-        val locationResponse = apiService.getAllMerchantLocationsNew(apiKey, apiSecret)
+        val locationResponse = apiService.getAllMerchantLocations(apiKey, apiSecret)
 
         if (!locationResponse.isJsonNull && !locationResponse.isEmpty) {
             logger.info("DashSpend Locations: ${locationResponse.size()}")
 
             locationResponse.forEach { location ->
-                //val location = location
                 val locationData = location.asJsonObject
 
                 // do we have the merchant information
                 val merchantId = locationData["merchantId"]
                 merchants[merchantId.asString]?.let { merchant ->
-                    // TODO: does this properly count inactive locations
-                    // does CTX mark them as inactive?
-                    //if (locationData.get("IsActive").asBoolean) {
                     val type = getType(merchant, locationData)
 
                     if (isValidLocation(type, locationData)) {
                         counter++
                         val merchantData = convert(merchant, locationData)
 
-                        if (merchantData.name.isNullOrEmpty()) {
+                        if (merchantData.name.isNullOrEmpty() || merchantData.address1?.contains("Address 1") == true) {
                             invalid++
                         } else {
                             emit(merchantData)
@@ -212,12 +174,21 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                     } else {
                         invalid++
                     }
-                } ?: logger.warn("merchant id not found: {}", merchantId)
+                } ?: logMissingMerchant(merchantId, merchants)
             }
         }
-
-        logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid)")
+        logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid, missing ${missingMerchants})")
         slackMessenger.postSlackMessage("DashSpend $counter records")
+    }
+
+    private val missingMerchants = hashSetOf<String>()
+
+    private fun logMissingMerchant(merchantId: JsonElement, merchants: Map<String, JsonObject>) {
+        if (!missingMerchants.contains(merchantId.asString)) {
+            logger.warn("merchant id not found: {}: {}", merchantId.asString, merchants[merchantId.asString]?.get("name"))
+        } else {
+            missingMerchants.add(merchantId.asString)
+        }
     }
 
     private fun convert(
@@ -228,9 +199,6 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
 
         return MerchantData().apply {
             deeplink = convertJsonData("deeplink", merchantData)
-//            plusCode = null
-//            addDate = null
-//            updateDate = null
             paymentMethod = "gift card"
             merchantId = convertJsonData("id", merchantData)
             active = true
@@ -253,7 +221,6 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
             source = "CTXSpend"
             sourceId = convertJsonData("sourceId", location)
             logoLocation = convertJsonData("logoUrl", merchantData)
-//            googleMaps = null
             coverImage = convertJsonData("cardImageUrl", merchantData)
             type = getType(merchant, location)
             redeemType = convertJsonData("redeemType", merchantData)
