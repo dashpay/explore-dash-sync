@@ -225,6 +225,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
             type = getType(merchant, location)
             redeemType = convertJsonData("redeemType", merchantData)
             savingsPercentage = convertJsonData("savingsPercentage", merchantData)
+            denominationsType = convertJsonData("denominationsType", merchantData)
 
             // TODO: Does CTX have these fields?
             monOpen = convertJsonData("MondayOpen", location)
