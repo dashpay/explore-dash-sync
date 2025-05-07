@@ -30,6 +30,7 @@ data class MerchantData(
     var type: String? = "",
     var redeemType: String? = "",
     var savingsPercentage: Int? = 0,
+    var denominationsType: String? = "",
     var instagram: String? = "",
     var twitter: String? = "",
     var delivery: String? = "",
@@ -52,7 +53,7 @@ data class MerchantData(
 
     companion object {
 
-        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
         const val DEEP_LINK_COL = 1
         const val PLUS_CODE_COL = 2
@@ -81,6 +82,7 @@ data class MerchantData(
         const val TYPE_COL = 25
         const val REDEEM_TYPE_COL = 26
         const val SAVINGS_PERCENTAGE_COL = 27
+        const val DENOMINATION_TYPE_COL = 28
     }
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {
@@ -111,6 +113,7 @@ data class MerchantData(
             setString(TYPE_COL, type)
             setString(REDEEM_TYPE_COL, redeemType ?: "none")
             setInt(SAVINGS_PERCENTAGE_COL, savingsPercentage ?: 0)
+            setString(DENOMINATION_TYPE_COL, denominationsType)
         }
     }
 }
