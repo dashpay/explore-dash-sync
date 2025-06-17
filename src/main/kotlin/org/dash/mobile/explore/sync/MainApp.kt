@@ -9,13 +9,15 @@ import kotlin.system.exitProcess
 
 const val UPLOAD_ARG = "-upload"
 const val QUIET_ARG = "-quiet"
+const val PROD_ARG = "-prod"
 
 @FlowPreview
 fun main(args: Array<String>) {
-    val validParams = setOf(UPLOAD_ARG, QUIET_ARG)
+    val validParams = setOf(UPLOAD_ARG, QUIET_ARG, PROD_ARG)
 
     var upload = false
     var quietMode = false
+    var prodMode = false
 
     if (args.isNotEmpty()) {
         for (arg in args) {
@@ -28,11 +30,12 @@ fun main(args: Array<String>) {
         }
         upload = args.contains(UPLOAD_ARG)
         quietMode = args.contains(QUIET_ARG)
+        prodMode = args.contains(PROD_ARG)
     }
 
     runBlocking {
         launch(Dispatchers.IO) {
-            SyncProcessor(OperationMode.TESTNET)
+            SyncProcessor(if (prodMode) OperationMode.PRODUCTION else OperationMode.TESTNET)
                 .syncData(File("."), upload, quietMode)
         }
     }

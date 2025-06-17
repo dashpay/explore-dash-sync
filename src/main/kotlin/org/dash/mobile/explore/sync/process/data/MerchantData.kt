@@ -8,7 +8,7 @@ data class MerchantData(
     var addDate: String? = "",
     var updateDate: String? = "",
     var paymentMethod: String? = "",
-    var merchantId: Long? = null,
+    var merchantId: String? = "",
     var id: Int? = null, // leave null for auto increment
     var active: Boolean? = true,
     var name: String? = "",
@@ -23,11 +23,14 @@ data class MerchantData(
     var territory: String? = "",
     var city: String? = "",
     var source: String? = "",
-    var sourceId: Int? = -1,
+    var sourceId: String? = "",
     var logoLocation: String? = "",
     var googleMaps: String? = "",
     var coverImage: String? = "",
     var type: String? = "",
+    var redeemType: String? = "",
+    var savingsPercentage: Int? = 0,
+    var denominationsType: String? = "",
     var instagram: String? = "",
     var twitter: String? = "",
     var delivery: String? = "",
@@ -50,7 +53,7 @@ data class MerchantData(
 
     companion object {
 
-        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
         const val DEEP_LINK_COL = 1
         const val PLUS_CODE_COL = 2
@@ -77,6 +80,9 @@ data class MerchantData(
         const val GOOGLE_MAPS_COL = 23
         const val COVER_IMAGE_COL = 24
         const val TYPE_COL = 25
+        const val REDEEM_TYPE_COL = 26
+        const val SAVINGS_PERCENTAGE_COL = 27
+        const val DENOMINATION_TYPE_COL = 28
     }
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {
@@ -86,7 +92,7 @@ data class MerchantData(
             setString(ADD_DATE_COL, addDate)
             setString(UPDATE_DATE_COL, updateDate)
             setString(PAYMENT_METHOD_COL, paymentMethod)
-            setLong(MERCHANT_ID_COL, merchantId ?: 0L)
+            setString(MERCHANT_ID_COL, merchantId ?: "")
             setBoolean(ACTIVE_COL, active ?: false)
             setString(NAME_COL, name)
             setString(ADDRESS1_COL, address1)
@@ -100,11 +106,14 @@ data class MerchantData(
             setString(TERRITORY_COL, territory)
             setString(CITY_COL, city)
             setString(SOURCE_COL, source)
-            setInt(SOURCE_ID_COL, sourceId ?: 0)
+            setString(SOURCE_ID_COL, sourceId ?: "")
             setString(LOGO_LOCATION_COL, logoLocation)
             setString(GOOGLE_MAPS_COL, googleMaps)
             setString(COVER_IMAGE_COL, coverImage)
             setString(TYPE_COL, type)
+            setString(REDEEM_TYPE_COL, redeemType ?: "none")
+            setInt(SAVINGS_PERCENTAGE_COL, savingsPercentage ?: 0)
+            setString(DENOMINATION_TYPE_COL, denominationsType)
         }
     }
 }

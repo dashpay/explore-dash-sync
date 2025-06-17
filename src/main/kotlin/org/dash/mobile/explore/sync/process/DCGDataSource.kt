@@ -104,7 +104,8 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
 //            addDate = null
 //            updateDate = null
             paymentMethod = convert<String?>(rowData, ColHeader.PAYMENT_METHOD)?.trim()
-            merchantId = convert<Int?>(rowData, ColHeader.MERCHANT_ID)?.toLong()
+            val merchantIdAsLong = convert<Int?>(rowData, ColHeader.MERCHANT_ID)?.toLong()
+            merchantId = merchantIdAsLong.toString()
 //            id = null
             active = convert(rowData, ColHeader.ACTIVE)
             name = convert(rowData, ColHeader.NAME)
@@ -121,12 +122,13 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
             }
 //            city = null
             source = "DCG"
-            sourceId = convert(rowData, ColHeader.SOURCE_ID)
+            val sourceIdAsInt:Int = convert(rowData, ColHeader.SOURCE_ID) ?: 0
+            sourceId = sourceIdAsInt.toString()
             logoLocation = convert(rowData, ColHeader.LOGO_LOCATION)
             googleMaps = convert(rowData, ColHeader.GOOGLE_MAPS)
             coverImage = null
             type = convert<String?>(rowData, ColHeader.TYPE)?.trim()
-
+            redeemType = "none"
             instagram = convert(rowData, ColHeader.INSTAGRAM)
             twitter = convert(rowData, ColHeader.TWITTER)
             delivery = convert(rowData, ColHeader.DELIVERY)
@@ -215,6 +217,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
         TWITTER,
         DELIVERY,
         ACTIVE,
-        MERCHANT_ID
+        MERCHANT_ID,
+        SAVINGS_PERCENTAGE,
     }
 }
