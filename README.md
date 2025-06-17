@@ -54,11 +54,15 @@ deployed to Google Cloud Platform ([BackgroundFunction](https://cloud.google.com
 Base on [Deploying Cloud Functions](https://cloud.google.com/functions/docs/deploying)
 
 ```
-gcloud functions deploy explore-dash-sync \
+# create pubsub topic
+gcloud pubsub topics create explore-dash-sync-trigger-3
+
+# deploy the function
+gcloud functions deploy explore-dash-sync-3 \
  --runtime=java17 \
  --entry-point=org.dash.mobile.explore.sync.Function \
- --source=build/deploy \ 
- --trigger-topic explore-dash-sync-trigger \
+ --source=build/deploy \
+ --trigger-topic explore-dash-sync-trigger-3 \
  --allow-unauthenticated --memory=1024MB --timeout=300s
 ``` 
 
@@ -67,16 +71,16 @@ from https://console.cloud.google.com/functions/list?authuser=0&project=dash-wal
 
 #### Trigger function
 
-Function can be triggered by publishing `explore-dash-sync-trigger` PubSub topic
+Function can be triggered by publishing `explore-dash-sync-trigger-3` PubSub topic
 
 ```
-gcloud pubsub topics publish explore-dash-sync-trigger
+gcloud pubsub topics publish explore-dash-sync-trigger-3
 ```
 
 Or for the testnet mode:
 
 ```
-gcloud pubsub topics publish explore-dash-sync-trigger --attribute="mode=testnet"
+gcloud pubsub topics publish explore-dash-sync-trigger-3 --attribute="mode=testnet"
 ```
 
 ### Generating Protocol Buffer messages (`javalite`)
