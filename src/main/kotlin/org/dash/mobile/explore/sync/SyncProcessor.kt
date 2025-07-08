@@ -12,6 +12,7 @@ import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinAtmRadarDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
 import org.dash.mobile.explore.sync.process.CTXSpendDataSource
+import org.dash.mobile.explore.sync.process.PiggyCardsDataSource
 import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
@@ -126,8 +127,9 @@ class SyncProcessor(private val mode: OperationMode) {
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val dashSpendDataFlow = CTXSpendDataSource(slackMessenger).getData(prepStatement)
-            val merchantDataFlow = flowOf(dcgDataFlow, dashSpendDataFlow).flattenConcat()
+            val ctxDataFlow = CTXSpendDataSource(slackMessenger).getData(prepStatement)
+            val piggyCardsDataFlow = PiggyCardsDataSource(slackMessenger).getData(prepStatement)
+            val merchantDataFlow = flowOf(dcgDataFlow, ctxDataFlow, piggyCardsDataFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
