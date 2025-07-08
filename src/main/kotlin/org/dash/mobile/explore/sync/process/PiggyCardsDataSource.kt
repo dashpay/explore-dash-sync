@@ -150,11 +150,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             .connectTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .also { client ->
-                val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.HEADERS
-                client.addInterceptor(logging)
-            }
+            //.also { client ->
+            //    val logging = HttpLoggingInterceptor { message -> println(message) }
+            //    logging.level = HttpLoggingInterceptor.Level.HEADERS
+            //    client.addInterceptor(logging)
+            //}
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
             .build()
 
@@ -194,10 +194,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
                     var lastGiftcard: Endpoint.Giftcard? = null
 
-                    giftcardsResponse.data?.forEach { giftcard ->
+                    val giftcard = giftcardsResponse.data?.firstOrNull()// { giftcard ->
+                    giftcard?.let { giftcard ->
                         logger.info("    giftcard: $giftcard")
                         counter++
-                        val merchantData = convert(giftcard)
+                        val merchantData = convert(brand, giftcard)
 
                         if (merchantData.name.isNullOrEmpty()) {
                             invalid++
@@ -222,7 +223,10 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                 }
                             }
                         }
+                    } ?: {
+                        logger.info("there is a problem with $giftcardsResponse")
                     }
+                    //}
                 } else {
                     logger.error("PiggyCards API error: ${giftcardsResponse.code} - ${giftcardsResponse.message}")
                 }
@@ -232,6 +236,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         } catch (ex: HttpException) {
             logger.error(ex.message, ex)
             throw ex
+        } catch (ex: NullPointerException) {
+            logger.error(ex.message, ex)
         }
 
         logger.notice("PiggyCards - imported $counter records (inactive $inactive, invalid $invalid)")
@@ -239,14 +245,15 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
     }
 
     private fun convert(
+        brand: Endpoint.Brand,
         giftcard: Endpoint.Giftcard,
     ): MerchantData {
         return MerchantData().apply {
             deeplink = null
             paymentMethod = "gift card"
-            merchantId = giftcard.id.toString()
+            merchantId = brand.id
             active = true
-            name = giftcard.name
+            name = brand.name
             address1 = "online"
             address2 = null
             address3 = null
