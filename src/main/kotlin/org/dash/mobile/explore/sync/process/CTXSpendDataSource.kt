@@ -23,12 +23,12 @@ import java.util.concurrent.TimeUnit
 private const val BASE_URL = "https://spend.ctx.com/"
 
 /**
- * Import data from DashSpend API
+ * Import data from CTXSpend API
  */
-class DashSpendDataSource(slackMessenger: SlackMessenger) :
+class CTXSpendDataSource(slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
 
-    override val logger = LoggerFactory.getLogger(DashSpendDataSource::class.java)!!
+    override val logger = LoggerFactory.getLogger(CTXSpendDataSource::class.java)!!
 
     interface Endpoint {
         data class Pagination(
@@ -121,8 +121,8 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                     currentPageIndex = pagination.page + 1
                     var currentRows = 0
                     currentRows = responseData.size()
-                    logger.info("DashSpend Merchants ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
-                    logger.info("DashSpend Merchants / totalRows: ${pagination.total}")
+                    logger.info("CTXSpend Merchants ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
+                    logger.info("CTXSpend Merchants / totalRows: ${pagination.total}")
 
                     responseData.forEach { merchant ->
                         val merchantData = merchant.asJsonObject
@@ -134,6 +134,8 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                         val disabled = !merchantData["enabled"].asBoolean
                         if (!disabled) {
                             merchants[merchantData["id"].asString] = merchantData.deepCopy()
+                        } else {
+                            logger.info("merchant disabled: {}", merchants["name"])
                         }
                     }
                 } else {
@@ -152,7 +154,7 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
         val locationResponse = apiService.getAllMerchantLocations(apiKey, apiSecret)
 
         if (!locationResponse.isJsonNull && !locationResponse.isEmpty) {
-            logger.info("DashSpend Locations: ${locationResponse.size()}")
+            logger.info("CTXSpend Locations: ${locationResponse.size()}")
 
             locationResponse.forEach { location ->
                 val locationData = location.asJsonObject
@@ -177,8 +179,8 @@ class DashSpendDataSource(slackMessenger: SlackMessenger) :
                 } ?: logMissingMerchant(merchantId, merchants)
             }
         }
-        logger.notice("DashSpend - imported $counter records (inactive $inactive, invalid $invalid, missing ${missingMerchants})")
-        slackMessenger.postSlackMessage("DashSpend $counter records")
+        logger.notice("CTXSpend - imported $counter records (inactive $inactive, invalid $invalid, missing ${missingMerchants})")
+        slackMessenger.postSlackMessage("CTXSpend $counter records")
     }
 
     private val missingMerchants = hashSetOf<String>()
