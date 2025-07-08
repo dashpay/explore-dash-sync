@@ -64,9 +64,9 @@ class SyncProcessor(private val mode: OperationMode) {
             logger.debug("DB file checksum $dbFileChecksum")
 
             val dbZipFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v3.zip"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v3-testnet.zip"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v3-devnet.zip"
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v4.zip"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v4-testnet.zip"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v4-devnet.zip"
             }
 
             val dbZipFile = File(workingDir, dbZipFileName)
