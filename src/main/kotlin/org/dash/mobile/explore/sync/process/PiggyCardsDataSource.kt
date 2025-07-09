@@ -192,10 +192,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
                 if (giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
-                    var lastGiftcard: Endpoint.Giftcard? = null
 
                     val giftcard = giftcardsResponse.data?.firstOrNull()// { giftcard ->
-                    giftcard?.let { giftcard ->
+                    if (giftcard != null) {
                         logger.info("    giftcard: $giftcard")
                         counter++
                         val merchantData = convert(brand, giftcard)
@@ -207,10 +206,10 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                             if (locations.isEmpty()) {
                                 emit(merchantData.copy(type = "online"))
                             }
+                            var locationsAdded = 0
                             locations.forEach { location ->
                                 logger.info("      location: $location")
-
-                                if (isValidLocation("", location)) {
+                                if (isValidLocation("physical", location)) {
                                     val merchantWithLocation = merchantData.copy(
                                         address1 = location.streetNumber + " " + location.street,
                                         city = location.city,
@@ -220,11 +219,15 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                         type = "physical"
                                     )
                                     emit(merchantWithLocation)
+                                    locationsAdded++
                                 }
                             }
+                            if (locations.size > 0) {
+                                logger.info("{} locations {} of {}", brand.name, locationsAdded, locations.size)
+                            }
                         }
-                    } ?: {
-                        logger.info("there is a problem with $giftcardsResponse")
+                    } else {
+                        logger.info("there is a problem with $giftcardsResponse for ")
                     }
                     //}
                 } else {
