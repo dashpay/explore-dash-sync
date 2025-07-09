@@ -264,11 +264,12 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             territory = null
             city = null
             source = "PiggyCards"
-            sourceId = giftcard.id.toString()
+            sourceId = brand.id
             logoLocation = giftcard.image
             coverImage = giftcard.image
             type = "online"
             redeemType = "barcode"
+            // these fields may not be correct, just based on a single card
             savingsPercentage = (giftcard.discountPercentage * 100).toInt()
             denominationsType = if (giftcard.priceType == "Range") {
                 "min-max"

@@ -2,7 +2,6 @@ package org.dash.mobile.explore.sync
 
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flattenConcat
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
@@ -20,6 +19,7 @@ import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
 import org.dash.mobile.explore.sync.process.data.MerchantData
+import org.dash.mobile.explore.sync.process.data.MerchantInfo
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -31,7 +31,6 @@ import java.sql.SQLException
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
-import kotlin.math.log
 
 @FlowPreview
 class SyncProcessor(private val mode: OperationMode) {
@@ -136,7 +135,7 @@ class SyncProcessor(private val mode: OperationMode) {
             //val piggyCardsDataFlow = PiggyCardsDataSource(slackMessenger).getData(prepStatement)
             val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
             val combinedMerchants = combineMerchants(listOf(ctxData, piggyCardsData))
-            val combinedFlow = combinedMerchants.asFlow().transform { data ->
+            val combinedFlow = combinedMerchants.first.asFlow().transform { data ->
                 data.transferInto(prepStatement)
                 emit(data)
             }
@@ -160,30 +159,58 @@ class SyncProcessor(private val mode: OperationMode) {
 
     private fun combineMerchants(
         lists: List<List<MerchantData>>
-    ): List<MerchantData> {
-        if (lists.isEmpty()) return emptyList()
+    ): Pair<List<MerchantData>, Collection<MerchantInfo>> {
+        if (lists.isEmpty()) return Pair(emptyList(), emptyList())
         
-        val result = mutableListOf<MerchantData>()
+        val locations = mutableListOf<MerchantData>()
+        val merchantInfoList = hashMapOf<String, MerchantInfo>()
         val locationMap = mutableMapOf<String, MerchantData>()
-        
+        val onlineMap = mutableMapOf<String, MerchantData>()
         // Process each list in order, prioritizing earlier lists
         lists.forEach { merchantList ->
             merchantList.forEach { merchant ->
-                val locationKey = createLocationKey(merchant.latitude, merchant.longitude)
-                
-                // Only add if we haven't seen this location before (first list wins)
-                if (!locationMap.containsKey(locationKey)) {
-                    locationMap[locationKey] = merchant
-                    result.add(merchant)
+                if (merchant.type == "online") {
+                    val onlineKey = createOnlineKey(merchant)
+                    if (!onlineMap.containsKey(onlineKey)) {
+                        onlineMap[onlineKey] = merchant
+                        locations.add(merchant)
+                    }
+                } else {
+                    // Only add if we haven't seen this location before (first list wins)
+                    val locationKey = createLocationKey(merchant.latitude, merchant.longitude)
+                    if (!locationMap.containsKey(locationKey)) {
+                        locationMap[locationKey] = merchant
+                        locations.add(merchant)
+                    }
+                }
+                if (!merchantInfoList.containsKey(merchant.merchantId)) {
+                    val merchantInfo = MerchantInfo(
+                        merchantId = merchant.merchantId,
+                        name = merchant.name,
+                        active = merchant.active,
+                        source = merchant.source,
+                        sourceId = merchant.sourceId,
+                        logoLocation = merchant.logoLocation,
+                        coverImage = merchant.coverImage,
+                        type = merchant.type,
+                        redeemType = merchant.redeemType,
+                        savingsPercentage = merchant.savingsPercentage,
+                        denominationsType = merchant.denominationsType
+                    )
+                    merchantInfoList.put(merchant.merchantId!!, merchantInfo)
                 }
             }
         }
         var count = 0
         lists.forEach { count += it.size }
-        logger.info("combining {} -> {}", count, result.size)
-        return result
+        logger.info("combining {} -> {}", count, locations.size)
+        return Pair(locations, merchantInfoList.values)
     }
-    
+
+    private fun createOnlineKey(merchant: MerchantData): String {
+        return merchant.name ?: "no_name"
+    }
+
     private fun createLocationKey(latitude: Double?, longitude: Double?): String {
         if (latitude == null || longitude == null) {
             // For merchants without coordinates, use a unique key based on object identity
