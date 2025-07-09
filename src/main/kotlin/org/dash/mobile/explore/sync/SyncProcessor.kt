@@ -2,9 +2,12 @@ package org.dash.mobile.explore.sync
 
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flattenConcat
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.flow.asFlow
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionLevel
@@ -28,6 +31,7 @@ import java.sql.SQLException
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
+import kotlin.math.log
 
 @FlowPreview
 class SyncProcessor(private val mode: OperationMode) {
@@ -127,9 +131,17 @@ class SyncProcessor(private val mode: OperationMode) {
         try {
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val ctxDataFlow = CTXSpendDataSource(slackMessenger).getData(prepStatement)
-            val piggyCardsDataFlow = PiggyCardsDataSource(slackMessenger).getData(prepStatement)
-            val merchantDataFlow = flowOf(dcgDataFlow, ctxDataFlow, piggyCardsDataFlow).flattenConcat()
+            //val ctxDataFlow = CTXSpendDataSource(slackMessenger).getData(prepStatement)
+            val ctxData = CTXSpendDataSource(slackMessenger).getDataList()
+            //val piggyCardsDataFlow = PiggyCardsDataSource(slackMessenger).getData(prepStatement)
+            val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
+            val combinedMerchants = combineMerchants(listOf(ctxData, piggyCardsData))
+            val combinedFlow = combinedMerchants.asFlow().transform { data ->
+                data.transferInto(prepStatement)
+                emit(data)
+            }
+            
+            val merchantDataFlow = flowOf(dcgDataFlow, combinedFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
@@ -144,6 +156,45 @@ class SyncProcessor(private val mode: OperationMode) {
                 dbConnection.close()
             }
         }
+    }
+
+    private fun combineMerchants(
+        lists: List<List<MerchantData>>
+    ): List<MerchantData> {
+        if (lists.isEmpty()) return emptyList()
+        
+        val result = mutableListOf<MerchantData>()
+        val locationMap = mutableMapOf<String, MerchantData>()
+        
+        // Process each list in order, prioritizing earlier lists
+        lists.forEach { merchantList ->
+            merchantList.forEach { merchant ->
+                val locationKey = createLocationKey(merchant.latitude, merchant.longitude)
+                
+                // Only add if we haven't seen this location before (first list wins)
+                if (!locationMap.containsKey(locationKey)) {
+                    locationMap[locationKey] = merchant
+                    result.add(merchant)
+                }
+            }
+        }
+        var count = 0
+        lists.forEach { count += it.size }
+        logger.info("combining {} -> {}", count, result.size)
+        return result
+    }
+    
+    private fun createLocationKey(latitude: Double?, longitude: Double?): String {
+        if (latitude == null || longitude == null) {
+            // For merchants without coordinates, use a unique key based on object identity
+            return "null_coords_${System.identityHashCode(latitude)}_${System.identityHashCode(longitude)}"
+        }
+        
+        // Round to 4 decimal places
+        val roundedLat = "%.4f".format(latitude)
+        val roundedLng = "%.4f".format(longitude)
+        
+        return "${roundedLat}_${roundedLng}"
     }
 
     @Throws(IOException::class)
