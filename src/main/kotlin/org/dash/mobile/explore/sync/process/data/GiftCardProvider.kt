@@ -2,7 +2,7 @@ package org.dash.mobile.explore.sync.process.data
 
 import java.sql.PreparedStatement
 
-data class MerchantInfo(
+data class GiftCardProvider(
     var id: Int? = null, // leave null for auto increment
     var merchantId: String? = "",
     var active: Boolean? = true,

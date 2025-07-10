@@ -19,7 +19,7 @@ import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
 import org.dash.mobile.explore.sync.process.data.MerchantData
-import org.dash.mobile.explore.sync.process.data.MerchantInfo
+import org.dash.mobile.explore.sync.process.data.GiftCardProvider
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -162,11 +162,11 @@ class SyncProcessor(private val mode: OperationMode) {
 
     private fun combineMerchants(
         lists: List<List<MerchantData>>
-    ): Pair<List<MerchantData>, Collection<MerchantInfo>> {
+    ): Pair<List<MerchantData>, Collection<GiftCardProvider>> {
         if (lists.isEmpty()) return Pair(emptyList(), emptyList())
         
         val locations = mutableListOf<MerchantData>()
-        val merchantInfoList = hashMapOf<String, MerchantInfo>()
+        val merchantInfoList = hashMapOf<String, GiftCardProvider>()
 //        val locationMap = mutableMapOf<String, MerchantData>()
 //        val onlineMap = mutableMapOf<String, MerchantData>()
         // Process each list in order, prioritizing earlier lists
