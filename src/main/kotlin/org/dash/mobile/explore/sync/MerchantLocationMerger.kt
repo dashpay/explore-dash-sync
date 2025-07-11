@@ -1,5 +1,6 @@
 package org.dash.mobile.explore.sync
 
+import org.dash.mobile.explore.sync.process.MerchantNameNormalizer
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.process.data.GiftCardProvider
 import org.slf4j.LoggerFactory
@@ -74,34 +75,79 @@ class MerchantLocationMerger {
 
         val resultsNew = arrayListOf<MerchantData>()
         matched.forEach { match ->
-            if (match.ctxIndex != -1) {
-                val ctxData = lists[0][match.ctxIndex]
-                addGiftcardProvider(ctxData, merchantInfoList)
-                resultsNew.add(lists[0][match.ctxIndex])
-            } else if (match.piggyIndex != -1) {
-                val piggyData = lists[0][match.piggyIndex]
-                addGiftcardProvider(piggyData, merchantInfoList)
-                resultsNew.add(lists[1][match.piggyIndex])
-            } else {
-                logger.error("not adding")
-            }
+            //if (match.ctxIndex != -1) {
+            val ctxData = lists[0][match.ctxIndex]
+            val piggyCardsData = lists[1][match.piggyIndex]
+            val mergedData = ctxData.copy(
+                savingsPercentage = max(ctxData.savingsPercentage ?: 0, piggyCardsData.savingsPercentage ?: 0)
+            )
+            MerchantNameNormalizer.add(mergedData.name, mergedData.logoLocation)
+            addGiftcardProvider(mergedData, merchantInfoList)
+
+            resultsNew.add(ctxData)
+//            } else if (match.piggyIndex != -1) {
+//                val piggyData = lists[0][match.piggyIndex]
+//                addGiftcardProvider(piggyData, merchantInfoList)
+//                resultsNew.add(lists[1][match.piggyIndex])
+//            } else {
+//                logger.error("not adding")
+//            }
         }
         
         logger.info("matched items: {}", matched.size)
         
         lists[0].forEachIndexed { index, ctxItem ->
             if (matched.none { it.ctxIndex == index }) {
-                resultsNew.add(ctxItem)
+                MerchantNameNormalizer.add(ctxItem.name, ctxItem.logoLocation)
+                resultsNew.add(
+                    ctxItem.copy(
+                        name = MerchantNameNormalizer.getNormalizedName(ctxItem.name),
+                        logoLocation = MerchantNameNormalizer.getLogo(ctxItem.name)
+                    )
+                )
                 addGiftcardProvider(ctxItem, merchantInfoList)
             }
         }
 
         lists[1].forEachIndexed { index, piggyCardsItem ->
-            if (piggyCardsItem.merchantId == "18" && piggyCardsItem.address1?.contains("1 Gerald") == true) {
-                logger.info("item at {} = {}, exists {}", index, piggyCardsItem, matched.any { it.piggyIndex == index })
-            }
+//            if (piggyCardsItem.merchantId == "18" && piggyCardsItem.address1?.contains("1 Gerald") == true) {
+//                logger.info("item at {} = {}, exists {}", index, piggyCardsItem, matched.any { it.piggyIndex == index })
+//            }
             if (matched.none { it.piggyIndex == index }) {
-                resultsNew.add(piggyCardsItem)
+                MerchantNameNormalizer.add(piggyCardsItem.name, piggyCardsItem.logoLocation)
+                if (piggyCardsItem.type == "online") {
+                    val existingOnlineItem = resultsNew.find {
+                        it.name == MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name) &&
+                        it.address1 == "online"
+                    }
+                    if (existingOnlineItem != null) {
+                        resultsNew.remove(existingOnlineItem)
+                        resultsNew.add(
+                            existingOnlineItem.copy(
+                                name = MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name),
+                                logoLocation = MerchantNameNormalizer.getLogo(piggyCardsItem.name),
+                                savingsPercentage = max(
+                                    piggyCardsItem.savingsPercentage ?: 0,
+                                    existingOnlineItem.savingsPercentage ?: 0
+                                )
+                            )
+                        )
+                    } else {
+                        resultsNew.add(
+                            piggyCardsItem.copy(
+                                name = MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name),
+                                logoLocation = MerchantNameNormalizer.getLogo(piggyCardsItem.name)
+                            )
+                        )
+                    }
+                } else {
+                    resultsNew.add(
+                        piggyCardsItem.copy(
+                            name = MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name),
+                            logoLocation = MerchantNameNormalizer.getLogo(piggyCardsItem.name)
+                        )
+                    )
+                }
                 addGiftcardProvider(piggyCardsItem, merchantInfoList)
             }
         }
