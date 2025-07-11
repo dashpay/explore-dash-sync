@@ -147,6 +147,15 @@ class SyncProcessor(private val mode: OperationMode) {
             val merchantDataFlow = flowOf(dcgDataFlow, combinedMerchantsFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
+            // gift_card_provider table
+            prepStatement = dbConnection.prepareStatement(GiftCardProvider.INSERT_STATEMENT)
+            val giftCardProviderFlow = combinedMerchants.second.asFlow().transform { data ->
+                data.transferInto(prepStatement)
+                emit(data)
+            }
+            syncData(giftCardProviderFlow, prepStatement)
+
+            // atm table
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
             val coinAtmRadarDataFlow = CoinAtmRadarDataSource(slackMessenger).getData(prepStatement)
             val atmDataFlow = flowOf(coinAtmRadarDataFlow).flattenConcat()
