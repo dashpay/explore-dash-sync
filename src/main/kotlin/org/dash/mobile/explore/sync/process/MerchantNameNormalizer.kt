@@ -1,10 +1,28 @@
 package org.dash.mobile.explore.sync.process
 
+import java.util.UUID
+import java.security.MessageDigest
+import java.nio.ByteBuffer
+
 object MerchantNameNormalizer {
     private val names = hashMapOf<String, String>()
     private val logos = hashMapOf<String, String>()
+    private val merchantIds = hashMapOf<String, String>()
 
     private fun getKey(name: String) = name.lowercase()
+
+    private fun generateDeterministicUUID(name: String): UUID {
+        // Use SHA-256 to create a deterministic hash of the name
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hash = digest.digest(name.toByteArray(Charsets.UTF_8))
+        
+        // Use the first 16 bytes of the hash to create a UUID
+        val bb = ByteBuffer.wrap(hash)
+        val mostSigBits = bb.long
+        val leastSigBits = bb.long
+        
+        return UUID(mostSigBits, leastSigBits)
+    }
 
     fun removeSuffix(name: String) = when {
         name.lowercase().endsWith(" usd") -> {
@@ -16,7 +34,7 @@ object MerchantNameNormalizer {
         else -> {
             name
         }
-    }
+    }.replace('’', '\'')
 
     fun getNormalizedName(name: String?): String? {
         return if (name != null) {
@@ -27,7 +45,7 @@ object MerchantNameNormalizer {
         }
     }
 
-    fun add(name: String?, logo: String?) {
+    fun add(name: String?, logo: String?, merchantId: String?) {
         name?.let {
             val name = removeSuffix(name)
             val key = getKey(name)
@@ -36,7 +54,12 @@ object MerchantNameNormalizer {
             }
             logo?.let {
                 if (!logos.containsKey(key)) {
-                    logos.put(key, logo)
+                    logos.put(key, it)
+                }
+            }
+            merchantId?.let {
+                if (!merchantIds.containsKey(key)) {
+                    merchantIds[key] = it
                 }
             }
         }
@@ -47,5 +70,18 @@ object MerchantNameNormalizer {
             val key = getKey(name)
             logos[key]
         }
+    }
+
+    fun getUniqueId(name: String): String {
+        val normalizedName = removeSuffix(name)
+        val key = getKey(normalizedName)
+        val uuid = merchantIds[key]
+        return if (uuid != null) {
+            uuid
+        } else {
+            val newUUID = generateDeterministicUUID(normalizedName)
+            merchantIds[key] = newUUID.toString()
+            newUUID
+        }.toString()
     }
 }
