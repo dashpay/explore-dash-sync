@@ -149,7 +149,7 @@ class MerchantLocationMerger {
             val merchantInfo = GiftCardProvider(
                 merchantId = MerchantNameNormalizer.getUniqueId(merchant.name!!),
                 active = merchant.active,
-                source = merchant.source,
+                provider = merchant.source,
                 sourceId = merchant.merchantId,
                 redeemType = merchant.redeemType,
                 savingsPercentage = merchant.savingsPercentage,
