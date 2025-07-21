@@ -8,7 +8,6 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
-import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -27,10 +26,8 @@ private const val BASE_URL = "https://api.piggy.cards/dash/v1/"
  */
 class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
-        //private val userId = "user-3587"
-    //private val password = ""
-    private val userId =  "user-3516"
-    private val password = "_xRXRr3ll$"
+    private lateinit var userId: String
+    private lateinit var password: String
     private var token: String = ""
     override val logger = LoggerFactory.getLogger(PiggyCardsDataSource::class.java)!!
 
@@ -38,20 +35,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         data class Brand(
             val id: String,
             val name: String
-        )
-        data class Merchant(
-            val id: String,
-            val name: String,
-            val description: String?,
-            val website: String?,
-            val logoUrl: String?,
-            val cardImageUrl: String?,
-            val category: String?,
-            val country: String?,
-            val savingsPercentage: Double?,
-            val redeemType: String?,
-            val denominationsType: String?,
-            val enabled: Boolean = true
         )
 
         data class GiftcardResponse(
@@ -150,11 +133,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             .connectTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            //.also { client ->
-            //    val logging = HttpLoggingInterceptor { message -> println(message) }
-            //    logging.level = HttpLoggingInterceptor.Level.HEADERS
-            //    client.addInterceptor(logging)
-            //}
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
             .build()
 
@@ -167,6 +145,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         apiService = retrofit.create(Endpoint::class.java)
 
         runBlocking {
+            val properties = getProperties()
+            userId = properties.getProperty("PIGGY_CARDS_USER_ID")
+            password = properties.getProperty("PIGGY_CARDS_PASSWORD")
             val loginResponse = apiService.login(Endpoint.LoginRequest(userId, password))
             token = loginResponse.accessToken
         }
@@ -178,7 +159,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
     override fun getRawData(): Flow<MerchantData> = flow {
         val properties = getProperties()
         val country = properties.getProperty("country", "US")
-        // val brandId = properties.getProperty("brandId", "22")
 
         logger.notice("Importing data from PiggyCards ($BASE_URL)")
 
@@ -193,7 +173,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                 if (giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
 
-                    val giftcard = giftcardsResponse.data?.firstOrNull()// { giftcard ->
+                    val giftcard = giftcardsResponse.data?.firstOrNull()
                     if (giftcard != null) {
                         logger.info("    giftcard: $giftcard")
                         counter++
@@ -211,7 +191,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                 logger.info("      location: $location")
                                 if (isValidLocation("physical", location)) {
                                     val merchantWithLocation = merchantData.copy(
-                                        address1 = location.streetNumber + " " + location.street,
+                                        address1 = createAddress(location),
                                         city = location.city,
                                         territory = location.state,
                                         latitude = location.latitude,
@@ -229,7 +209,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                     } else {
                         logger.info("there is a problem with $giftcardsResponse for ")
                     }
-                    //}
                 } else {
                     logger.error("PiggyCards API error: ${giftcardsResponse.code} - ${giftcardsResponse.message}")
                 }
@@ -245,6 +224,14 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         logger.notice("PiggyCards - imported $counter records (inactive $inactive, invalid $invalid)")
         slackMessenger.postSlackMessage("PiggyCards $counter records")
+    }
+
+    private fun createAddress(location: Endpoint.Location): String {
+        return if (location.streetNumber != "Unknown") {
+            location.streetNumber + " " + location.street
+        } else {
+            location.street
+        }
     }
 
     private fun convert(
@@ -297,23 +284,4 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         return !isAddress1Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }
-
-//    private fun getType(merchant: Endpoint.Merchant, location: Endpoint.Location): String? {
-//        val hasPhysicalAddress = !location.address1.isNullOrEmpty() ||
-//                                 !location.address2.isNullOrEmpty() ||
-//                                 (location.latitude != null && location.latitude != 0.0) ||
-//                                 (location.longitude != null && location.longitude != 0.0)
-//
-//        val hasWebsite = !merchant.website.isNullOrEmpty()
-//
-//        return when {
-//            hasPhysicalAddress && hasWebsite -> "both"
-//            hasPhysicalAddress -> "physical"
-//            hasWebsite -> "online"
-//            else -> {
-//                logger.error("Merchant has invalid type: ${merchant.name}")
-//                null
-//            }
-//        }
-//    }
 }
