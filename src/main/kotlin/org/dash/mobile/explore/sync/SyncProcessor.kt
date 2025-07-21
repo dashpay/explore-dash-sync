@@ -35,6 +35,9 @@ import java.util.zip.CheckedInputStream
 
 @FlowPreview
 class SyncProcessor(private val mode: OperationMode) {
+    companion object {
+        const val CURRENT_VERSION = 4
+    }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
 
@@ -49,7 +52,7 @@ class SyncProcessor(private val mode: OperationMode) {
     @FlowPreview
     suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
-        slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
+        slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ### - $mode", logger)
 
         try {
             val syncLock = gcManager.checkLock()
@@ -69,9 +72,9 @@ class SyncProcessor(private val mode: OperationMode) {
             logger.debug("DB file checksum $dbFileChecksum")
 
             val dbZipFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v4.zip"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v4-testnet.zip"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v4-devnet.zip"
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
             }
 
             val dbZipFile = File(workingDir, dbZipFileName)
