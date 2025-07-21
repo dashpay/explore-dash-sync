@@ -162,3 +162,10 @@ data class MerchantData(
     }
 }
 ```
+
+# Database Versions
+
+1. DCG Merchants and ATM's for DashPay (android) < 11.1.2 and Dash Wallet (iOS) < 8.3
+2. Beta version for DashSpend  for DashPay (android) = 11.2.1-2
+3. Production for DashSpend (CTX) for DashPay (android) >= 11.2.2 and Dash Wallet (iOS) >= 8.4 
+4. Production for DashSpend (CTX + PiggyCards)

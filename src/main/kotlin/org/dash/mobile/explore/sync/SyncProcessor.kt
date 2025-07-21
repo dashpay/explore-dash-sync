@@ -5,18 +5,23 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flattenConcat
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.flow.asFlow
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionLevel
 import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinAtmRadarDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
-import org.dash.mobile.explore.sync.process.DashSpendDataSource
+import org.dash.mobile.explore.sync.process.CTXSpendDataSource
+import org.dash.mobile.explore.sync.process.PiggyCardsDataSource
 import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
 import org.dash.mobile.explore.sync.process.data.Data
 import org.dash.mobile.explore.sync.process.data.MerchantData
+import org.dash.mobile.explore.sync.process.data.GiftCardProvider
 import org.dash.mobile.explore.sync.slack.SlackMessenger
+import org.dash.mobile.explore.sync.utils.CSVExporter.saveMerchantDataToCsv
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileNotFoundException
@@ -30,6 +35,9 @@ import java.util.zip.CheckedInputStream
 
 @FlowPreview
 class SyncProcessor(private val mode: OperationMode) {
+    companion object {
+        const val CURRENT_VERSION = 4
+    }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
 
@@ -44,7 +52,7 @@ class SyncProcessor(private val mode: OperationMode) {
     @FlowPreview
     suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
-        slackMessenger.postSlackMessage("### Sync started ### - $mode", logger)
+        slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ### - $mode", logger)
 
         try {
             val syncLock = gcManager.checkLock()
@@ -64,9 +72,15 @@ class SyncProcessor(private val mode: OperationMode) {
             logger.debug("DB file checksum $dbFileChecksum")
 
             val dbZipFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v3.zip"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v3-testnet.zip"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v3-devnet.zip"
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
+            }
+
+            val dbFileName = when (mode) {
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-uncompressed.db"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet-uncompressed.db"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet-uncompressed.db"
             }
 
             val dbZipFile = File(workingDir, dbZipFileName)
@@ -94,7 +108,12 @@ class SyncProcessor(private val mode: OperationMode) {
                 compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
 
                 throwIfCanceled()
+                // upload the zipped database
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
+                // copy and upload the uncompressed database
+                val dbFileWithName = File(workingDir, dbFileName)
+                dbFile.copyTo(dbFileWithName, overwrite = true)
+                gcManager.uploadObject(dbFileWithName, timestamp, dbFileChecksum)
             } else {
                 logger.notice("No changes were detected, updating canceled")
                 slackMessenger.postSlackMessage("No changes detected, updating canceled", logger)
@@ -124,12 +143,32 @@ class SyncProcessor(private val mode: OperationMode) {
     private suspend fun importData(dbFile: File) {
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         try {
+            // merchant table
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val dashSpendDataFlow = DashSpendDataSource(slackMessenger).getData(prepStatement)
-            val merchantDataFlow = flowOf(dcgDataFlow, dashSpendDataFlow).flattenConcat()
+            val ctxData = CTXSpendDataSource(slackMessenger).getDataList()
+            saveMerchantDataToCsv(ctxData, "ctx.csv")
+            val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
+            saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
+            val merger = MerchantLocationMerger()
+            val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
+            val combinedMerchantsFlow = combinedMerchants.first.asFlow().transform { data ->
+                data.transferInto(prepStatement)
+                emit(data)
+            }
+            
+            val merchantDataFlow = flowOf(dcgDataFlow, combinedMerchantsFlow).flattenConcat()
             syncData(merchantDataFlow, prepStatement)
 
+            // gift_card_provider table
+            prepStatement = dbConnection.prepareStatement(GiftCardProvider.INSERT_STATEMENT)
+            val giftCardProviderFlow = combinedMerchants.second.asFlow().transform { data ->
+                data.transferInto(prepStatement)
+                emit(data)
+            }
+            syncData(giftCardProviderFlow, prepStatement)
+
+            // atm table
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
             val coinAtmRadarDataFlow = CoinAtmRadarDataSource(slackMessenger).getData(prepStatement)
             val atmDataFlow = flowOf(coinAtmRadarDataFlow).flattenConcat()
@@ -143,6 +182,7 @@ class SyncProcessor(private val mode: OperationMode) {
             }
         }
     }
+
 
     @Throws(IOException::class)
     private fun createEmptyDB(workingDir: File): File {
