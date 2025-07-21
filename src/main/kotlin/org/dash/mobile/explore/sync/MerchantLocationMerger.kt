@@ -49,12 +49,13 @@ class MerchantLocationMerger {
         lists: List<List<MerchantData>>
     ): Pair<List<MerchantData>, Collection<GiftCardProvider>> {
         if (lists.isEmpty()) return Pair(emptyList(), emptyList())
-        val merchantInfoList = hashMapOf<String, GiftCardProvider>()
+        val merchantProviderMap = mutableMapOf<String, GiftCardProvider>() // Key: merchantId_provider
+        
         if (lists.size == 1) {
             lists.first().forEach {
-                addGiftcardProvider(it, merchantInfoList)
+                addGiftcardProvider(it, merchantProviderMap)
             }
-            return Pair(lists.first(), merchantInfoList.values)
+            return Pair(lists.first(), merchantProviderMap.values)
         }
 
         val matched = findMatchesAdvanced(
@@ -77,14 +78,19 @@ class MerchantLocationMerger {
         matched.forEach { match ->
             val ctxData = lists[0][match.ctxIndex]
             val piggyCardsData = lists[1][match.piggyIndex]
+            val maxSavings = max(ctxData.savingsPercentage ?: 0, piggyCardsData.savingsPercentage ?: 0)
             val mergedData = ctxData.copy(
                 merchantId = ctxData.merchantId,
-                savingsPercentage = max(ctxData.savingsPercentage ?: 0, piggyCardsData.savingsPercentage ?: 0)
+                savingsPercentage = maxSavings
             )
+            
             MerchantNameNormalizer.add(mergedData.name, mergedData.logoLocation, ctxData.merchantId)
-            addGiftcardProvider(mergedData, merchantInfoList)
+            
+            // Add GiftCardProvider entries for both CTX and PiggyCards
+            addGiftcardProvider(ctxData, merchantProviderMap)
+            addGiftcardProvider(piggyCardsData.copy(merchantId = ctxData.merchantId), merchantProviderMap)
 
-            resultsNew.add(ctxData)
+            resultsNew.add(mergedData)
         }
         
         logger.info("matched items: {}", matched.size)
@@ -99,7 +105,7 @@ class MerchantLocationMerger {
                     logoLocation = MerchantNameNormalizer.getLogo(ctxItem.name)
                 )
                 resultsNew.add(newItem)
-                addGiftcardProvider(newItem, merchantInfoList)
+                addGiftcardProvider(newItem, merchantProviderMap)
             }
         }
 
@@ -117,23 +123,28 @@ class MerchantLocationMerger {
                         it.type == "online"
                     }
                     if (existingOnlineItem != null) {
+                        // Update existing online merchant with max savings
+                        val maxSavings = max(
+                            piggyCardsItem.savingsPercentage ?: 0,
+                            existingOnlineItem.savingsPercentage ?: 0
+                        )
                         resultsNew.remove(existingOnlineItem)
                         resultsNew.add(existingOnlineItem.copy(
                             name = MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name),
                             merchantId = MerchantNameNormalizer.getUniqueId(piggyCardsItem.name!!),
                             logoLocation = MerchantNameNormalizer.getLogo(piggyCardsItem.name),
-                            savingsPercentage = max(
-                                piggyCardsItem.savingsPercentage ?: 0,
-                                existingOnlineItem.savingsPercentage ?: 0
-                            )
+                            savingsPercentage = maxSavings
                         ))
+                        // Add PiggyCards provider entry with the same merchantId
+                        addGiftcardProvider(newItem.copy(merchantId = existingOnlineItem.merchantId), merchantProviderMap)
                     } else {
                         resultsNew.add(newItem)
+                        addGiftcardProvider(newItem, merchantProviderMap)
                     }
                 } else {
                     resultsNew.add(newItem)
+                    addGiftcardProvider(newItem, merchantProviderMap)
                 }
-                addGiftcardProvider(newItem, merchantInfoList)
             }
         }
         
@@ -141,22 +152,27 @@ class MerchantLocationMerger {
         lists.forEach { count += it.size }
         logger.info("combining {} -> {}", count,  resultsNew.size)
         saveMerchantDataToCsv(resultsNew, "dashspend.csv")
-        return Pair(resultsNew, merchantInfoList.values)
+        return Pair(resultsNew, merchantProviderMap.values)
     }
 
-    private fun addGiftcardProvider(merchant: MerchantData, merchantInfoList: MutableMap<String, GiftCardProvider>) {
-        if (!merchantInfoList.containsKey(merchant.merchantId)) {
-            val merchantInfo = GiftCardProvider(
-                merchantId = MerchantNameNormalizer.getUniqueId(merchant.name!!),
-                active = merchant.active,
-                provider = merchant.source,
-                sourceId = merchant.merchantId,
-                redeemType = merchant.redeemType,
-                savingsPercentage = merchant.savingsPercentage,
-                denominationsType = merchant.denominationsType
-            )
-            merchantInfoList.put(merchant.merchantId!!, merchantInfo)
-        }
+    private fun addGiftcardProvider(
+        merchant: MerchantData, 
+        merchantProviderMap: MutableMap<String, GiftCardProvider>
+    ) {
+        if (merchant.merchantId == null || merchant.source == null) return
+        
+        val providerKey = "${merchant.merchantId}_${merchant.source}"
+        
+        val merchantInfo = GiftCardProvider(
+            merchantId = merchant.merchantId,
+            active = merchant.active,
+            provider = merchant.source,
+            sourceId = merchant.sourceId ?: merchant.merchantId,
+            redeemType = merchant.redeemType,
+            savingsPercentage = merchant.savingsPercentage,
+            denominationsType = merchant.denominationsType
+        )
+        merchantProviderMap[providerKey] = merchantInfo
     }
 
     private fun createOnlineKey(merchant: MerchantData): String {

@@ -264,7 +264,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             longitude = null
             website = null
             phone = null
-            territory = null
+            territory = ""
             city = null
             source = "PiggyCards"
             sourceId = brand.id

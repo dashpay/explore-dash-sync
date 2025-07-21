@@ -7,7 +7,7 @@ import java.sql.PreparedStatement
  *
  * CREATE TABLE gift_card_providers (
  *     id INTEGER PRIMARY KEY,
- *     merchantId INTEGER NOT NULL,
+ *     merchantId TEXT NOT NULL,
  *     provider TEXT NOT NULL,
  *     redeemType TEXT NOT NULL,
  *     savingsPercentage INTEGER NOT NULL,
@@ -35,11 +35,11 @@ data class GiftCardProvider(
         const val ID_COL = 1
         const val MERCHANT_ID_COL = 2
         const val PROVIDER_COL = 3
-        const val ACTIVE_COL = 4
-        const val SOURCE_ID_COL = 5
-        const val REDEEM_TYPE_COL = 6
-        const val SAVINGS_PERCENTAGE_COL = 7
-        const val DENOMINATION_TYPE_COL = 8
+        const val REDEEM_TYPE_COL = 4
+        const val SAVINGS_PERCENTAGE_COL = 5
+        const val ACTIVE_COL = 6
+        const val DENOMINATION_TYPE_COL = 7
+        const val SOURCE_ID_COL = 8
     }
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {

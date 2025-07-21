@@ -220,7 +220,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                 }
             }
             city = convertJsonData("city", location)
-            source = "CTXSpend"
+            source = "CTX"
             sourceId = convertJsonData("sourceId", location)
             logoLocation = convertJsonData("logoUrl", merchantData)
             coverImage = convertJsonData("cardImageUrl", merchantData)
