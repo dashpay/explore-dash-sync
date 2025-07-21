@@ -146,10 +146,8 @@ class SyncProcessor(private val mode: OperationMode) {
             // merchant table
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            //val ctxDataFlow = CTXSpendDataSource(slackMessenger).getData(prepStatement)
             val ctxData = CTXSpendDataSource(slackMessenger).getDataList()
             saveMerchantDataToCsv(ctxData, "ctx.csv")
-            //val piggyCardsDataFlow = PiggyCardsDataSource(slackMessenger).getData(prepStatement)
             val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
             saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
             val merger = MerchantLocationMerger()
@@ -261,8 +259,4 @@ class SyncProcessor(private val mode: OperationMode) {
         }
         logger.debug("Compressing done $outFile")
     }
-}
-
-private fun MerchantData.debug(): String {
-    return "$name: $address1 [$latitude, $longitude]"
 }
