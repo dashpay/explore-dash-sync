@@ -77,6 +77,12 @@ class SyncProcessor(private val mode: OperationMode) {
                 OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
             }
 
+            val dbFileName = when (mode) {
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-uncompressed.db"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet-uncompressed.db"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet-uncompressed.db"
+            }
+
             val dbZipFile = File(workingDir, dbZipFileName)
 
             val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
@@ -102,7 +108,12 @@ class SyncProcessor(private val mode: OperationMode) {
                 compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
 
                 throwIfCanceled()
+                // upload the zipped database
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
+                // copy and upload the uncompressed database
+                val dbFileWithName = File(workingDir, dbFileName)
+                dbFile.copyTo(dbFileWithName, overwrite = true)
+                gcManager.uploadObject(dbFileWithName, timestamp, dbFileChecksum)
             } else {
                 logger.notice("No changes were detected, updating canceled")
                 slackMessenger.postSlackMessage("No changes detected, updating canceled", logger)
