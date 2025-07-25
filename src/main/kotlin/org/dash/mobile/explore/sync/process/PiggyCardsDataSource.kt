@@ -193,7 +193,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                     val merchantWithLocation = merchantData.copy(
                                         address1 = createAddress(location),
                                         city = location.city,
-                                        territory = location.state,
+                                        territory = fixStateName(location.state),
                                         latitude = location.latitude,
                                         longitude = location.longitude,
                                         type = "physical"
