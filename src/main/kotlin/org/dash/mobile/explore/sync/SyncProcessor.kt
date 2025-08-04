@@ -26,9 +26,11 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.sql.Connection
 import java.sql.DriverManager
 import java.sql.PreparedStatement
 import java.sql.SQLException
+import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
@@ -66,7 +68,8 @@ class SyncProcessor(private val mode: OperationMode) {
             gcManager.createLockFile(mode.name)
 
             dbFile = createEmptyDB(workingDir)
-            importData(dbFile)
+            val locationsDbFile = createLocationsDB(workingDir)
+            importData(dbFile, locationsDbFile)
 
             val dbFileChecksum = calculateChecksum(dbFile)
             logger.debug("DB file checksum $dbFileChecksum")
@@ -140,16 +143,17 @@ class SyncProcessor(private val mode: OperationMode) {
     }
 
     @Throws(SQLException::class)
-    private suspend fun importData(dbFile: File) {
+    private suspend fun importData(dbFile: File, locationsDbFile: File) {
+        val ctxData = CTXSpendDataSource(slackMessenger).getDataList()
+        saveMerchantDataToCsv(ctxData, "ctx.csv")
+        val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
+        saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
+        
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         try {
             // merchant table
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val ctxData = CTXSpendDataSource(slackMessenger).getDataList()
-            saveMerchantDataToCsv(ctxData, "ctx.csv")
-            val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
-            saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
             val merger = MerchantLocationMerger()
             val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
             val combinedMerchantsFlow = combinedMerchants.first.asFlow().transform { data ->
@@ -181,6 +185,20 @@ class SyncProcessor(private val mode: OperationMode) {
                 dbConnection.close()
             }
         }
+
+        // Process locations database
+        val locationsDbConnection = DriverManager.getConnection("jdbc:sqlite:${locationsDbFile.path}")
+        try {
+            createLocationsTable(locationsDbConnection)
+            populateLocationsTable(locationsDbConnection, ctxData, piggyCardsData)
+        } catch (ex: SQLException) {
+            logger.error(ex.message, ex)
+            throw ex
+        } finally {
+            if (!locationsDbConnection.isClosed) {
+                locationsDbConnection.close()
+            }
+        }
     }
 
 
@@ -202,6 +220,19 @@ class SyncProcessor(private val mode: OperationMode) {
             }
         }
         logger.debug("Empty DB created ${dbFile.absolutePath}")
+        return dbFile
+    }
+
+    @Throws(IOException::class)
+    private fun createLocationsDB(workingDir: File): File {
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val today = dateFormat.format(Date())
+        val dbFile = File(workingDir, "locations-$today.db")
+        if (dbFile.exists()) {
+            dbFile.delete()
+        }
+        dbFile.createNewFile()
+        logger.debug("Creating locations DB ${dbFile.absolutePath}")
         return dbFile
     }
 
@@ -244,6 +275,69 @@ class SyncProcessor(private val mode: OperationMode) {
                 throwIfCanceled()
             }
         }
+    }
+
+    @Throws(SQLException::class)
+    private fun createLocationsTable(connection: Connection) {
+        val sqlStream = javaClass.classLoader.getResourceAsStream("create_locations_table.sql")
+            ?: throw FileNotFoundException("create_locations_table.sql not found in resources")
+        
+        val createTableSQL = sqlStream.bufferedReader().use { it.readText() }
+        connection.createStatement().use { statement ->
+            statement.execute(createTableSQL)
+        }
+        logger.debug("Created locations table")
+    }
+
+    @Throws(SQLException::class)
+    private fun populateLocationsTable(connection: Connection, ctxData: List<MerchantData>, piggyCardsData: List<MerchantData>) {
+        val insertSQL = """
+            INSERT INTO locations (
+                merchantId,
+                active, name, address1, address2, address3, address4,
+                latitude, longitude, website, phone, territory, city,
+                source, sourceId,
+                type, redeemType, savingsPercentage, denominationsType
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimIndent()
+
+        connection.prepareStatement(insertSQL).use { prepStatement ->
+            for (merchant in ctxData + piggyCardsData) {
+                if (merchant.type == "physical") {
+                    prepStatement.setString(1, merchant.merchantId)
+                    prepStatement.setInt(2, if (merchant.active == true) 1 else 0)
+                    prepStatement.setString(3, merchant.name)
+                    prepStatement.setString(4, merchant.address1)
+                    prepStatement.setString(5, merchant.address2)
+                    prepStatement.setString(6, merchant.address3)
+                    prepStatement.setString(7, merchant.address4)
+                    merchant.latitude?.let { prepStatement.setDouble(8, it) } ?: prepStatement.setNull(
+                        8,
+                        java.sql.Types.REAL
+                    )
+                    merchant.longitude?.let { prepStatement.setDouble(9, it) } ?: prepStatement.setNull(
+                        9,
+                        java.sql.Types.REAL
+                    )
+                    prepStatement.setString(10, merchant.website)
+                    prepStatement.setString(11, merchant.phone)
+                    prepStatement.setString(12, merchant.territory)
+                    prepStatement.setString(13, merchant.city)
+                    prepStatement.setString(14, merchant.source)
+                    prepStatement.setString(15, merchant.sourceId)
+                    prepStatement.setString(16, merchant.type)
+                    prepStatement.setString(17, merchant.redeemType)
+                    merchant.savingsPercentage?.let { prepStatement.setInt(18, it) } ?: prepStatement.setNull(
+                        18,
+                        java.sql.Types.INTEGER
+                    )
+                    prepStatement.setString(19, merchant.denominationsType)
+                    prepStatement.addBatch()
+                }
+            }
+            prepStatement.executeBatch()
+        }
+        logger.debug("Populated locations table with ${ctxData.size + piggyCardsData.size} records")
     }
 
     @Throws(IOException::class)

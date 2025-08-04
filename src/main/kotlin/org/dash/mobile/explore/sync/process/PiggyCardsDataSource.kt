@@ -19,8 +19,9 @@ import retrofit2.http.*
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-private const val BASE_URL = "https://api.piggy.cards/dash/v1/"
-
+private const val PROD_BASE_URL = "https://api.piggy.cards/dash/v1/"
+private const val DEV_BASE_URL = "https://apidev.piggy.cards/dash/v1/"
+private const val BASE_URL = DEV_BASE_URL
 /**
  * Import data from PiggyCards API
  */
