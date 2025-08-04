@@ -147,7 +147,7 @@ class SyncProcessor(private val mode: OperationMode) {
         val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
         saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
         var matchedInfo: List<MerchantLocationMerger.MatchInfo>? = null
-        
+
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         val combinedMerchants = try {
             // merchant table
@@ -373,16 +373,16 @@ class SyncProcessor(private val mode: OperationMode) {
 
     @Throws(SQLException::class)
     private fun populateDuplicatesTable(
-        connection: Connection, 
-        matchedInfo: List<MerchantLocationMerger.MatchInfo>?, 
-        ctxData: List<MerchantData>, 
+        connection: Connection,
+        matchedInfo: List<MerchantLocationMerger.MatchInfo>?,
+        ctxData: List<MerchantData>,
         piggyCardsData: List<MerchantData>
     ) {
         if (matchedInfo == null) {
             logger.debug("No match info available, skipping duplicates table population")
             return
         }
-        
+
         val insertSQL = """
             INSERT INTO duplicates (
                 CTX_merchantId, CTX_name, CTX_address1, CTX_address2, CTX_address3, CTX_address4,
@@ -398,7 +398,7 @@ class SyncProcessor(private val mode: OperationMode) {
             for (match in matchedInfo) {
                 val ctxMerchant = ctxData[match.ctxIndex]
                 val piggyMerchant = piggyCardsData[match.piggyIndex]
-                
+
                 // CTX data
                 prepStatement.setString(1, ctxMerchant.merchantId)
                 prepStatement.setString(2, ctxMerchant.name)
@@ -414,7 +414,7 @@ class SyncProcessor(private val mode: OperationMode) {
                 prepStatement.setString(12, ctxMerchant.city)
                 prepStatement.setString(13, ctxMerchant.source)
                 prepStatement.setString(14, ctxMerchant.sourceId)
-                
+
                 // PiggyCards data
                 prepStatement.setString(15, piggyMerchant.merchantId)
                 prepStatement.setString(16, piggyMerchant.name)
@@ -428,7 +428,7 @@ class SyncProcessor(private val mode: OperationMode) {
                 prepStatement.setString(24, piggyMerchant.city)
                 prepStatement.setString(25, piggyMerchant.source)
                 prepStatement.setString(26, piggyMerchant.sourceId)
-                
+
                 prepStatement.addBatch()
             }
             prepStatement.executeBatch()
