@@ -1,4 +1,4 @@
-CREATE TABLE "locations" (
+CREATE TABLE "final" (
     "merchantId"    TEXT,
     "id"    INTEGER NOT NULL,
     "active"    INTEGER DEFAULT 1,

@@ -7,6 +7,12 @@ import org.dash.mobile.explore.sync.utils.CSVExporter.saveMerchantDataToCsv
 import org.slf4j.LoggerFactory
 import kotlin.math.*
 
+data class CombinedResult(
+    val merchants: List<MerchantData>,
+    val giftCardProviders: Collection<GiftCardProvider>,
+    val matchInfo: List<MerchantLocationMerger.MatchInfo>
+)
+
 class MerchantLocationMerger {
     private val logger = LoggerFactory.getLogger(MerchantLocationMerger::class.java)!!
 
@@ -46,15 +52,15 @@ class MerchantLocationMerger {
 
     fun combineMerchants(
         lists: List<List<MerchantData>>
-    ): Pair<List<MerchantData>, Collection<GiftCardProvider>> {
-        if (lists.isEmpty()) return Pair(emptyList(), emptyList())
+    ): CombinedResult {
+        if (lists.isEmpty()) return CombinedResult(emptyList(), emptyList(), emptyList())
         val merchantProviderMap = mutableMapOf<String, GiftCardProvider>() // Key: merchantId_provider
         
         if (lists.size == 1) {
             lists.first().forEach {
                 addGiftcardProvider(it, it.merchantId!!, merchantProviderMap)
             }
-            return Pair(lists.first(), merchantProviderMap.values)
+            return CombinedResult(lists.first(), merchantProviderMap.values, emptyList())
         }
 
         val matched = findMatchesAdvanced(
@@ -159,7 +165,7 @@ class MerchantLocationMerger {
         lists.forEach { count += it.size }
         logger.info("combining {} -> {}", count,  resultsNew.size)
         saveMerchantDataToCsv(resultsNew, "dashspend.csv")
-        return Pair(resultsNew, merchantProviderMap.values)
+        return CombinedResult(resultsNew, merchantProviderMap.values, matched)
     }
 
     private fun addGiftcardProvider(
