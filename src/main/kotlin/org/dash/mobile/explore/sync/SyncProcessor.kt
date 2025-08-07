@@ -149,6 +149,12 @@ class SyncProcessor(private val mode: OperationMode) {
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
             val merger = MerchantLocationMerger()
             val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
+            slackMessenger.postSlackMessage("Duplicate locations: ${combinedMerchants.matchInfo.size}")
+            val merchantSet = hashSetOf<String>()
+            combinedMerchants.giftCardProviders.forEach { merchantSet.add(it.merchantId!!) }
+            slackMessenger.postSlackMessage("Total merchants: ${merchantSet.size}")
+            slackMessenger.postSlackMessage("Total Locations: ${combinedMerchants.merchants.size}")
+
             matchedInfo = combinedMerchants.matchInfo
             val combinedMerchantsFlow = combinedMerchants.merchants.asFlow().transform { data ->
                 data.transferInto(prepStatement)

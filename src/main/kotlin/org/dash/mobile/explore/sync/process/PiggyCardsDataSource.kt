@@ -1,6 +1,7 @@
 package org.dash.mobile.explore.sync.process
 
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -163,21 +164,30 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         logger.notice("Importing data from PiggyCards ($BASE_URL)")
 
-        var counter = 0
+        var locationCount = 0
+        val invalidLocations = linkedMapOf<String, Endpoint.Location>()
 
         try {
             val brands = apiService.getBrands(country)
+            slackMessenger.postSlackMessage("PiggyCard Merchants: ${brands.size}", logger)
             brands.forEach { brand ->
                 logger.info("brand: $brand")
                 val giftcardsResponse = apiService.getGiftCards(country, brand.id)
 
                 if (giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
+                    giftcardsResponse.data?.forEach { giftcard ->
+                        val info = if (giftcard.priceType == "Fixed") {
+                            giftcard.denomination
+                        } else {
+                            "(${giftcard.minDenomination}, ${giftcard.maxDenomination})"
+                        }
+                        logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}[$info ${giftcard.currency}], discount=${giftcard.discountPercentage}, inv=${giftcard.quantity}")
+                    }
 
                     val giftcard = giftcardsResponse.data?.firstOrNull()
                     if (giftcard != null) {
-                        logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
-                        counter++
+                        // logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
                         val merchantData = convert(brand, giftcard)
 
                         if (merchantData.name.isNullOrEmpty()) {
@@ -201,9 +211,12 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                     )
                                     emit(merchantWithLocation)
                                     locationsAdded++
+                                    locationCount++
+                                } else {
+                                    invalidLocations[location.name] = location
                                 }
                             }
-                            if (locations.size > 0) {
+                            if (locations.isNotEmpty()) {
                                 logger.info("{} locations {} of {}", brand.name, locationsAdded, locations.size)
                             }
                         }
@@ -222,9 +235,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         } catch (ex: NullPointerException) {
             logger.error(ex.message, ex)
         }
-
-        logger.notice("PiggyCards - imported $counter records (inactive $inactive, invalid $invalid)")
-        slackMessenger.postSlackMessage("PiggyCards $counter records")
+        slackMessenger.postSlackMessage("PiggyCard Locations: $locationCount", logger)
+        // logger.notice("PiggyCards - imported $counter records (inactive $inactive, invalid $invalid)")
+        slackMessenger.postSlackMessage("PiggyCards - imported $locationCount records (invalid ${ 
+            invalidLocations.map { it.value.name }.joinToString(", ") 
+        } )", logger)
     }
 
     private fun createAddress(location: Endpoint.Location): String {
