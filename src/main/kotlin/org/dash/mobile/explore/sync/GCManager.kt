@@ -10,6 +10,8 @@ import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 private const val GC_PROJECT_ID = "dash-wallet-firebase"
 
@@ -100,5 +102,49 @@ class GCManager(private val mode: OperationMode) {
         val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName)
         gcStorage.delete(blobId)
         logger.info(".lock file deleted")
+    }
+
+    @Throws(IOException::class)
+    fun downloadMostRecentLocationsDb(targetDirectory: File = File(".")): File? {
+        logger.info("Searching for most recent locations database on GCS")
+        
+        val bucket = gcStorage.get(GCS_BUCKET_NAME)
+            ?: throw IOException("Unable to access bucket $GCS_BUCKET_NAME")
+            
+        val locationsBlobs = bucket.list(
+            Storage.BlobListOption.prefix("explore/locations-")
+        ).iterateAll()
+            .filter { it.name.endsWith(".db") }
+            .filter { it.name.matches(Regex("explore/locations-$mode-\\d{4}-\\d{2}-\\d{2}\\.db")) }
+        
+        if (locationsBlobs.isEmpty()) {
+            logger.warn("No locations database files found on GCS")
+            return null
+        }
+        
+        val mostRecentBlob = locationsBlobs.maxByOrNull { blob ->
+            val dateStr = blob.name.substringAfter("locations-").substringBefore(".db")
+            try {
+                LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+            } catch (e: Exception) {
+                logger.warn("Unable to parse date from filename: ${blob.name}", e)
+                LocalDate.MIN
+            }
+        }
+        
+        if (mostRecentBlob == null) {
+            logger.warn("Unable to determine most recent locations database")
+            return null
+        }
+        
+        val fileName = mostRecentBlob.name.substringAfterLast("/")
+        val targetFile = File(targetDirectory, "tmp-$fileName")
+        
+        logger.info("Downloading most recent locations database: ${mostRecentBlob.name}")
+        
+        mostRecentBlob.downloadTo(targetFile.toPath())
+        
+        logger.info("Successfully downloaded ${mostRecentBlob.name} to ${targetFile.absolutePath}")
+        return targetFile
     }
 }

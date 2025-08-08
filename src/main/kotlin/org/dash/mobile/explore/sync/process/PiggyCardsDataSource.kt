@@ -1,7 +1,6 @@
 package org.dash.mobile.explore.sync.process
 
 import com.google.gson.GsonBuilder
-import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -9,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import org.dash.mobile.explore.sync.DataSourceReport
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -32,6 +32,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
     private lateinit var password: String
     private var token: String = ""
     override val logger = LoggerFactory.getLogger(PiggyCardsDataSource::class.java)!!
+    val merchantList = hashSetOf<String>()
+    var dataSourceReport: DataSourceReport? = null
 
     interface Endpoint {
         data class Brand(
@@ -172,6 +174,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             slackMessenger.postSlackMessage("PiggyCard Merchants: ${brands.size}", logger)
             brands.forEach { brand ->
                 logger.info("brand: $brand")
+                merchantList.add(brand.name)
                 val giftcardsResponse = apiService.getGiftCards(country, brand.id)
 
                 if (giftcardsResponse.code == 200) {
@@ -227,6 +230,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                     logger.error("PiggyCards API error: ${giftcardsResponse.code} - ${giftcardsResponse.message}")
                 }
             }
+            dataSourceReport = DataSourceReport(
+                "PiggyCards",
+                brands.size,
+                locationCount
+            )
         } catch (ex: IOException) {
             logger.error(ex.message, ex)
         } catch (ex: HttpException) {
@@ -240,6 +248,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         slackMessenger.postSlackMessage("PiggyCards - imported $locationCount records (invalid ${ 
             invalidLocations.map { it.value.name }.joinToString(", ") 
         } )", logger)
+
     }
 
     private fun createAddress(location: Endpoint.Location): String {
@@ -299,5 +308,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         val isLongitudeEmpty = location.longitude == null || location.longitude == 0.0
 
         return !isAddress1Empty || !isLatitudeEmpty || !isLongitudeEmpty
+    }
+
+    fun getReport(): DataSourceReport {
+        return dataSourceReport!!
     }
 }

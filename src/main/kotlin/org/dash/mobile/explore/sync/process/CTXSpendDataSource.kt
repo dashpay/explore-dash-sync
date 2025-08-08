@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import org.dash.mobile.explore.sync.DataSourceReport
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -28,8 +29,9 @@ private const val BASE_URL = "https://spend.ctx.com/"
  */
 class CTXSpendDataSource(slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
-
     override val logger = LoggerFactory.getLogger(CTXSpendDataSource::class.java)!!
+    val merchantList = hashSetOf<String>()
+    var dataSourceReport: DataSourceReport? = null
 
     interface Endpoint {
         data class Pagination(
@@ -134,6 +136,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                         val disabled = !merchantData["enabled"].asBoolean
                         if (!disabled) {
                             merchants[merchantData["id"].asString] = merchantData.deepCopy()
+                            merchantList.add(merchantData["name"].asString)
                         } else {
                             disabledMerchants[merchantData["id"].asString] = merchantData.deepCopy()
                         }
@@ -190,6 +193,12 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                 it.value["merchantId"]
             }.joinToString(", ") 
         }), locations missing ${missingMerchants})")
+        dataSourceReport = DataSourceReport(
+            "CTX",
+            merchants.size,
+            counter,
+            disabledMerchants.map { it.value["name"].asString }
+        )
     }
 
     private val missingMerchants = hashSetOf<String>()
@@ -304,5 +313,9 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
 
     private fun getLongitude(location: JsonObject): Double? {
         return convertJsonData("longitude", location)
+    }
+
+    fun getReport(): DataSourceReport {
+        return dataSourceReport!!
     }
 }
