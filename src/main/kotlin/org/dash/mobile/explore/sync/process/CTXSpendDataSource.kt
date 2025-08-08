@@ -152,15 +152,15 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                 throw ex
             }
         }
-        slackMessenger.postSlackMessage("CTXSpend Merchants: ${merchants.size}", logger)
-        slackMessenger.postSlackMessage("CTXSpend Disabled Merchants: (${disabledMerchants.map { it.value["name"] }.joinToString(", ") }.)", logger)
+        logger.info("CTXSpend Merchants: ${merchants.size}")
+        logger.info("CTXSpend Disabled Merchants: (${disabledMerchants.map { it.value["name"] }.joinToString(", ") }.)")
         // load locations
         var counter = 0
         val locationResponse = apiService.getAllMerchantLocations(apiKey, apiSecret)
         val invalidLocations = linkedMapOf<String, JsonObject>()
 
         if (!locationResponse.isJsonNull && !locationResponse.isEmpty) {
-            slackMessenger.postSlackMessage("CTXSpend Locations Records: ${locationResponse.size()}", logger)
+            logger.info("CTXSpend Locations Records: ${locationResponse.size()}")
             locationResponse.forEach { location ->
                 val locationData = location.asJsonObject
 
@@ -187,8 +187,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                 } ?: logMissingMerchant(merchantId, merchants)
             }
         }
-        logger.notice("CTXSpend - imported $counter records (inactive $inactive, invalid $invalid, missing ${missingMerchants})")
-        slackMessenger.postSlackMessage("CTXSpend $counter records (inactive $inactive, invalid (${ 
+        logger.info("CTXSpend $counter records (inactive $inactive, invalid (${ 
             invalidLocations.map { 
                 it.value["merchantId"]
             }.joinToString(", ") 

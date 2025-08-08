@@ -155,11 +155,11 @@ class SyncProcessor(private val mode: OperationMode) {
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
             val merger = MerchantLocationMerger()
             val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
-            slackMessenger.postSlackMessage("Duplicate locations: ${combinedMerchants.matchInfo.size}")
+            logger.info("Duplicate locations: ${combinedMerchants.matchInfo.size}")
             val merchantSet = hashSetOf<String>()
             combinedMerchants.giftCardProviders.forEach { merchantSet.add(it.merchantId!!) }
-            slackMessenger.postSlackMessage("Total merchants: ${merchantSet.size}")
-            slackMessenger.postSlackMessage("Total Locations: ${combinedMerchants.merchants.size}")
+            logger.info("Total merchants: ${merchantSet.size}")
+            logger.info("Total Locations: ${combinedMerchants.merchants.size}")
             report.mergedLocations = combinedMerchants.matchInfo.size
             report.totalMerchants = merchantSet.size
             report.totalLocations = combinedMerchants.merchants.size
@@ -293,16 +293,16 @@ class SyncProcessor(private val mode: OperationMode) {
                 val (newCTX, removedCTX) = findListDifferences(previousCTXMerchants, currentCTXMerchants) {
                     it
                 }
-                slackMessenger.postSlackMessage("CTX New merchants: $newCTX", logger)
-                slackMessenger.postSlackMessage("CTX Removed merchants: $removedCTX", logger)
+                logger.info("CTX New merchants: $newCTX")
+                logger.info("CTX Removed merchants: $removedCTX")
                  report.updateDataSourceReport(report["CTX"]!!.copy(newMerchants = newCTX, removedMerchants =  removedCTX))
 
                 val currentPiggyCardsMerchants = piggyCardsDataSource.merchantList.toList()
                 val (newPC, removedPC) = findListDifferences(previousPiggyCardsMerchants, currentPiggyCardsMerchants) {
                     it
                 }
-                slackMessenger.postSlackMessage("PiggyCards New merchants: $newPC", logger)
-                slackMessenger.postSlackMessage("PiggyCards Removed merchants: $removedPC", logger)
+                logger.info("PiggyCards New merchants: $newPC")
+                logger.info("PiggyCards Removed merchants: $removedPC")
                 report.updateDataSourceReport(report["PiggyCards"]!!.copy(newMerchants = newPC, removedMerchants =  removedPC))
             } catch (ex: SQLException) {
                 logger.warn("Failed to load previous locations data: ${ex.message}")

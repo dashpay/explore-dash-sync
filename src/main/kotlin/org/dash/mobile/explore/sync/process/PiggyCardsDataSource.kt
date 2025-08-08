@@ -171,7 +171,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         try {
             val brands = apiService.getBrands(country)
-            slackMessenger.postSlackMessage("PiggyCard Merchants: ${brands.size}", logger)
+            logger.info("PiggyCard Merchants: ${brands.size}")
             brands.forEach { brand ->
                 logger.info("brand: $brand")
                 merchantList.add(brand.name)
@@ -179,6 +179,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
                 if (giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
+                    var discountPercentage = 0.0
                     giftcardsResponse.data?.forEach { giftcard ->
                         val info = if (giftcard.priceType == "Fixed") {
                             giftcard.denomination
@@ -186,6 +187,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                             "(${giftcard.minDenomination}, ${giftcard.maxDenomination})"
                         }
                         logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}[$info ${giftcard.currency}], discount=${giftcard.discountPercentage}, inv=${giftcard.quantity}")
+                        discountPercentage = max(discountPercentage, giftcard.discountPercentage)
                     }
 
                     val giftcard = giftcardsResponse.data?.firstOrNull()
@@ -243,11 +245,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         } catch (ex: NullPointerException) {
             logger.error(ex.message, ex)
         }
-        slackMessenger.postSlackMessage("PiggyCard Locations: $locationCount", logger)
-        // logger.notice("PiggyCards - imported $counter records (inactive $inactive, invalid $invalid)")
-        slackMessenger.postSlackMessage("PiggyCards - imported $locationCount records (invalid ${ 
+        logger.info("PiggyCards - imported $locationCount records (invalid ${ 
             invalidLocations.map { it.value.name }.joinToString(", ") 
-        } )", logger)
+        })", logger)
 
     }
 
