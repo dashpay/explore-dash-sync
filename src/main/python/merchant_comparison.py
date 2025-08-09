@@ -344,7 +344,7 @@ def coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_dis
     
     # Find exact coordinate matches using truncation
     for piggy_idx, piggy_row in piggy_df.iterrows():
-        truncated_lat, truncated_lon = truncate_coordinates(piggy_row['lat'], piggy_row['lon'], coordinate_precision)
+        truncated_lat, truncated_lon = truncate_coordinates(piggy_row['latitude'], piggy_row['longitude'], coordinate_precision)
         if truncated_lat is not None and truncated_lon is not None:
             coord_key = (truncated_lat, truncated_lon)
             if coord_key in ctx_coord_lookup:
@@ -353,7 +353,7 @@ def coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_dis
                     
                     # Calculate exact distance
                     distance = haversine_vectorized(
-                        piggy_row['lat'], piggy_row['lon'],
+                        piggy_row['latitude'], piggy_row['longitude'],
                         np.array([ctx_row['latitude']]), np.array([ctx_row['longitude']])
                     )[0]
                     
@@ -488,7 +488,7 @@ def create_comparison_report_advanced(piggy_df, ctx_df, all_matches, enable_reve
         
         # Get corrected locations if enabled
         piggy_corrected_city, piggy_corrected_state = get_corrected_location(
-            piggy_row['lat'], piggy_row['lon'], enable_reverse_geocoding)
+            piggy_row['latitude'], piggy_row['longitude'], enable_reverse_geocoding)
         ctx_corrected_city, ctx_corrected_state = get_corrected_location(
             ctx_row['latitude'], ctx_row['longitude'], enable_reverse_geocoding)
         
@@ -496,11 +496,11 @@ def create_comparison_report_advanced(piggy_df, ctx_df, all_matches, enable_reve
             'match_type': match_type,
             'confidence_score': confidence,
             'piggy_name': piggy_row['name'],
-            'piggy_address': piggy_row['FULL ADDRESS'],
+            'piggy_address': piggy_row['address1'],
             'piggy_city': piggy_row['city'],
-            'piggy_state': piggy_row['state'],
-            'piggy_lat': piggy_row['lat'],
-            'piggy_lon': piggy_row['lon'],
+            'piggy_state': piggy_row['territory'],
+            'piggy_lat': piggy_row['latitude'],
+            'piggy_lon': piggy_row['longitude'],
             'ctx_name': ctx_row['name'],
             'ctx_address': ctx_row['address1'],
             'ctx_city': ctx_row['city'],
@@ -533,17 +533,20 @@ def create_comparison_report_advanced(piggy_df, ctx_df, all_matches, enable_reve
         if i not in matched_piggy_indices:
             # Get corrected location for unique Piggy entries
             piggy_corrected_city, piggy_corrected_state = get_corrected_location(
-                row['lat'], row['lon'], enable_reverse_geocoding)
-            
+                row['latitude'], row['longitude'], enable_reverse_geocoding)
+
             result_row = {
                 'match_type': 'PIGGY_UNIQUE',
                 'confidence_score': 0,
                 'piggy_name': row['name'],
-                'piggy_address': row['FULL ADDRESS'],
+                'piggy_address': row['address1'],
                 'piggy_city': row['city'],
                 'piggy_state': row['state'],
                 'piggy_lat': row['lat'],
                 'piggy_lon': row['lon'],
+                'piggy_state': row['territory'],
+                'piggy_lat': row['latitude'],
+                'piggy_lon': row['longitude'],
                 'ctx_name': '',
                 'ctx_address': '',
                 'ctx_city': '',
@@ -1124,10 +1127,10 @@ class MerchantComparisonGUI:
             
             # Data quality analysis
             self.progress_var.set("Analyzing data quality...")
-            
-            piggy_valid_coords = piggy_df.dropna(subset=['lat', 'lon'])
-            ctx_valid_coords = ctx_df.dropna(subset=['latitude', 'longitude'])
-            
+
+            piggy_valid_coords = piggy_df.dropna(subset=['latitude', 'longitude']).reset_index(drop=True)
+            ctx_valid_coords = ctx_df.dropna(subset=['latitude', 'longitude']).reset_index(drop=True)
+
             self.log_message(f"Data quality check:")
             self.log_message(f"  Piggy: {len(piggy_valid_coords)}/{len(piggy_df)} have valid coordinates")
             self.log_message(f"  CTX: {len(ctx_valid_coords)}/{len(ctx_df)} have valid coordinates")
@@ -1242,9 +1245,9 @@ class MerchantComparisonGUI:
             lon_col = None
             
             # Common latitude column names
-            lat_candidates = ['lat', 'latitude', 'Lat', 'Latitude', 'LAT', 'LATITUDE']
-            lon_candidates = ['lon', 'lng', 'longitude', 'Lon', 'Lng', 'Longitude', 'LON', 'LNG', 'LONGITUDE']
-            
+            lat_candidates = ['latitude', 'latitude', 'latitude', 'Latitude', 'latitude', 'LATITUDE']
+            lon_candidates = ['longitude', 'lng', 'longitude', 'longitude', 'Lng', 'Longitude', 'longitude', 'LNG', 'LONGITUDE']
+
             for col in df.columns:
                 if col in lat_candidates:
                     lat_col = col
@@ -1429,8 +1432,8 @@ class MerchantComparisonGUI:
             # Calculate street address similarity (only when ignoring geographic components)
             street_addr_sim = 0.0
             if include_address and (ignore_city or ignore_state or ignore_zip):
-                street_addr_sim = street_address_similarity(piggy_row['FULL ADDRESS'], ctx_row['address1'])
-            
+                street_addr_sim = street_address_similarity(piggy_row['address1'], ctx_row['address1'])
+
             # Calculate confidence using new algorithm
             confidence = calculate_confidence_score_new(
                 distance, name_sim, street_addr_sim, piggy_row, ctx_row,
@@ -1480,11 +1483,11 @@ class MerchantComparisonGUI:
             
             # Process remaining locations with strict coordinate priority
             for i, piggy_row in remaining_piggy_df.iterrows():
-                if pd.isna(piggy_row['lat']) or pd.isna(piggy_row['lon']):
+                if pd.isna(piggy_row['latitude']) or pd.isna(piggy_row['longitude']):
                     continue
                 
                 # Very restrictive spatial filtering for coordinate priority
-                nearby_ctx = spatial_index_filter(piggy_row['lat'], piggy_row['lon'], 
+                nearby_ctx = spatial_index_filter(piggy_row['latitude'], piggy_row['longitude'],
                                                 remaining_ctx_df, max_distance)
                 
                 if len(nearby_ctx) == 0:
@@ -1492,7 +1495,7 @@ class MerchantComparisonGUI:
                 
                 # Calculate distances
                 distances = haversine_vectorized(
-                    piggy_row['lat'], piggy_row['lon'],
+                    piggy_row['latitude'], piggy_row['longitude'],
                     nearby_ctx['latitude'].values, nearby_ctx['longitude'].values
                 )
                 
@@ -1519,7 +1522,7 @@ class MerchantComparisonGUI:
                     # Street address similarity (only when ignoring geographic components)
                     street_addr_sim = 0.0
                     if include_address and (ignore_city or ignore_state or ignore_zip):
-                        street_addr_sim = street_address_similarity(piggy_row['FULL ADDRESS'], ctx_row['address1'])
+                        street_addr_sim = street_address_similarity(piggy_row['address1'], ctx_row['address1'])
                     
                     # Calculate confidence with coordinate priority
                     confidence = calculate_confidence_score_new(
