@@ -627,6 +627,10 @@ class MerchantComparisonGUI:
         self.root.geometry("950x900")
         self.root.resizable(True, True)
         
+        # Dark mode theme variables
+        self.dark_mode = tk.BooleanVar(value=False)
+        self.setup_theme()
+        
         # Settings file path
         self.settings_file = Path.home() / "merchant_comparison_settings.json"
         
@@ -659,8 +663,119 @@ class MerchantComparisonGUI:
         # Load saved settings after widgets are created
         self.load_settings()
         
+        # Apply theme after loading settings and creating widgets
+        self.apply_theme()
+        self.update_widget_colors(self.root)
+        if hasattr(self, 'theme_button'):
+            self.theme_button.config(text="☀️ Light Mode" if self.dark_mode.get() else "🌙 Dark Mode")
+        
         # Save settings when window is closed
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+    
+    def setup_theme(self):
+        """Setup light and dark theme colors"""
+        self.themes = {
+            'light': {
+                'bg': '#ffffff',
+                'fg': '#000000',
+                'entry_bg': '#ffffff',
+                'entry_fg': '#000000',
+                'button_bg': '#f0f0f0',
+                'button_fg': '#000000',
+                'frame_bg': '#f0f0f0',
+                'text_bg': '#ffffff',
+                'text_fg': '#000000',
+                'select_bg': '#0078d4',
+                'select_fg': '#ffffff'
+            },
+            'dark': {
+                'bg': '#2d2d2d',
+                'fg': '#ffffff',
+                'entry_bg': '#404040',
+                'entry_fg': '#ffffff',
+                'button_bg': '#404040',
+                'button_fg': '#000000',
+                'frame_bg': '#353535',
+                'text_bg': '#1e1e1e',
+                'text_fg': '#ffffff',
+                'select_bg': '#0078d4',
+                'select_fg': '#ffffff'
+            }
+        }
+        self.apply_theme()
+    
+    def apply_theme(self):
+        """Apply the current theme to all widgets"""
+        theme = self.themes['dark' if self.dark_mode.get() else 'light']
+        
+        # Configure root window
+        self.root.configure(bg=theme['bg'])
+        
+        # Store theme for widget creation
+        self.current_theme = theme
+    
+    def toggle_theme(self):
+        """Toggle between light and dark mode"""
+        self.dark_mode.set(not self.dark_mode.get())
+        self.apply_theme()
+        self.save_settings()
+        
+        # Update button text
+        if hasattr(self, 'theme_button'):
+            self.theme_button.config(text="☀️ Light Mode" if self.dark_mode.get() else "🌙 Dark Mode")
+        
+        # Update all existing widgets
+        self.update_widget_colors(self.root)
+    
+    def update_widget_colors(self, widget):
+        """Recursively update colors of all widgets"""
+        theme = self.current_theme
+        
+        try:
+            widget_class = widget.winfo_class()
+            
+            if widget_class in ['Frame', 'Toplevel']:
+                widget.configure(bg=theme['frame_bg'])
+                if hasattr(widget, 'configure') and 'fg' in widget.configure():
+                    widget.configure(fg=theme['fg'])
+            elif widget_class == 'LabelFrame':
+                widget.configure(bg=theme['bg'], fg=theme['fg'])
+            elif widget_class == 'Label':
+                widget.configure(bg=theme['bg'], fg=theme['fg'])
+            elif widget_class == 'Entry':
+                widget.configure(bg=theme['entry_bg'], fg=theme['entry_fg'], 
+                               insertbackground=theme['fg'])
+            elif widget_class == 'Button':
+                widget.configure(bg=theme['button_bg'], fg=theme['button_fg'])
+            elif widget_class == 'Text':
+                widget.configure(bg=theme['text_bg'], fg=theme['text_fg'], 
+                               insertbackground=theme['fg'])
+            elif widget_class == 'Checkbutton':
+                widget.configure(bg=theme['bg'], fg=theme['fg'], 
+                               selectcolor=theme['entry_bg'])
+            elif widget_class == 'Scale':
+                widget.configure(bg=theme['bg'], fg=theme['fg'])
+            elif widget_class == 'Canvas':
+                widget.configure(bg=theme['bg'])
+        except:
+            pass  # Some widgets might not support certain options
+        
+        # Update special widgets if they exist
+        if hasattr(self, 'canvas'):
+            try:
+                self.canvas.configure(bg=theme['bg'])
+            except:
+                pass
+        
+        if hasattr(self, 'scrollable_frame'):
+            try:
+                self.scrollable_frame.configure(bg=theme['frame_bg'])
+            except:
+                pass
+        
+        # Recursively update children
+        for child in widget.winfo_children():
+            self.update_widget_colors(child)
     
     def create_widgets(self):
         # Title
@@ -676,7 +791,11 @@ class MerchantComparisonGUI:
         canvas = tk.Canvas(main_container, highlightthickness=0)
         v_scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
         h_scrollbar = ttk.Scrollbar(main_container, orient="horizontal", command=canvas.xview)
-        scrollable_frame = ttk.Frame(canvas)
+        scrollable_frame = tk.Frame(canvas)
+        
+        # Store references for theming
+        self.canvas = canvas
+        self.scrollable_frame = scrollable_frame
         
         scrollable_frame.bind(
             "<Configure>",
@@ -900,6 +1019,11 @@ class MerchantComparisonGUI:
                  bg="#f44336", fg="white", font=("Arial", 12, "bold"), 
                  padx=30, pady=15).pack(side="left", padx=5)
         
+        self.theme_button = tk.Button(center_frame, text="🌙 Dark Mode", 
+                 command=self.toggle_theme, bg="#9C27B0", fg="white", 
+                 font=("Arial", 12, "bold"), padx=30, pady=15)
+        self.theme_button.pack(side="left", padx=5)
+        
         # Results text area
         results_frame = tk.LabelFrame(scrollable_frame, text="Analysis Results", font=("Arial", 10, "bold"))
         results_frame.pack(pady=5, padx=10, fill="both", expand=True)
@@ -958,6 +1082,7 @@ class MerchantComparisonGUI:
                 self.enable_reverse_geocoding.set(settings.get('enable_reverse_geocoding', False))
                 self.geocoding_file.set(settings.get('geocoding_file', ''))
                 self.geocoding_batch_size.set(settings.get('geocoding_batch_size', 100))
+                self.dark_mode.set(settings.get('dark_mode', False))
                 
                 # Load window settings if enabled
                 if settings.get('remember_window_size', True):
@@ -1001,6 +1126,7 @@ class MerchantComparisonGUI:
                 'batch_size': self.batch_size.get(),
                 'enable_reverse_geocoding': self.enable_reverse_geocoding.get(),
                 'geocoding_batch_size': self.geocoding_batch_size.get(),
+                'dark_mode': self.dark_mode.get(),
                 'window_geometry': self.root.geometry() if self.remember_window_size.get() else '950x900'
             }
             
