@@ -328,7 +328,7 @@ def truncate_coordinates(lat, lon, precision):
     
     return truncated_lat, truncated_lon
 
-def coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_distance_miles=0.5):
+def coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_distance_miles=0.5, ignore_name = False, min_name_sim = 0.90):
     """Primary coordinate-based matching with exact precision using truncation"""
     coordinate_matches = []
     
@@ -541,9 +541,6 @@ def create_comparison_report_advanced(piggy_df, ctx_df, all_matches, enable_reve
                 'piggy_name': row['name'],
                 'piggy_address': row['address1'],
                 'piggy_city': row['city'],
-                'piggy_state': row['state'],
-                'piggy_lat': row['lat'],
-                'piggy_lon': row['lon'],
                 'piggy_state': row['territory'],
                 'piggy_lat': row['latitude'],
                 'piggy_lon': row['longitude'],
@@ -1411,8 +1408,8 @@ class MerchantComparisonGUI:
         
         # STEP 1: PRIMARY COORDINATE MATCHING (always first)
         self.log_message(f"Step 1: Finding truncated coordinate matches (precision: {coordinate_precision} decimal places)")
-        exact_coordinate_matches = coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_distance)
-        
+        exact_coordinate_matches = coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_distance, ignore_name, min_name_sim)
+
         all_matches = []
         matched_piggy_indices = set()
         matched_ctx_indices = set()
