@@ -356,9 +356,15 @@ def coordinate_priority_matching(piggy_df, ctx_df, coordinate_precision, max_dis
                         piggy_row['latitude'], piggy_row['longitude'],
                         np.array([ctx_row['latitude']]), np.array([ctx_row['longitude']])
                     )[0]
+
+                    name_sim = advanced_name_similarity_cached(piggy_row['name'], ctx_row['name'])
+                    if ignore_name:
+                        meets_name_sim = True
+                    else:
+                        meets_name_sim = name_sim >= min_name_sim
                     
                     # Only include if within max distance
-                    if distance <= max_distance_miles:
+                    if distance <= max_distance_miles and meets_name_sim:
                         coordinate_matches.append({
                             'piggy_index': piggy_idx,
                             'ctx_index': ctx_idx,
@@ -1484,7 +1490,7 @@ class MerchantComparisonGUI:
                     continue
                 
                 # Very restrictive spatial filtering for coordinate priority
-                nearby_ctx = spatial_index_filter(piggy_row['latitude'], piggy_row['longitude'],
+                nearby_ctx = spatial_index_filter(piggy_row['latitude'], piggy_row['longitude'], 
                                                 remaining_ctx_df, max_distance)
                 
                 if len(nearby_ctx) == 0:
