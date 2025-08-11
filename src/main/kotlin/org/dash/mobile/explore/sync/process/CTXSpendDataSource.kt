@@ -135,7 +135,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                         if (!disabled) {
                             merchants[merchantData["id"].asString] = merchantData.deepCopy()
                         } else {
-                            logger.info("merchant disabled: {}", merchants["name"])
+                            logger.info("merchant disabled: {}", merchantData["name"])
                         }
                     }
                 } else {

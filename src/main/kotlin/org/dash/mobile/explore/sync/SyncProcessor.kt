@@ -80,12 +80,6 @@ class SyncProcessor(private val mode: OperationMode) {
                 OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
             }
 
-            val dbFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-uncompressed.db"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet-uncompressed.db"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet-uncompressed.db"
-            }
-
             val dbZipFile = File(workingDir, dbZipFileName)
 
             val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
@@ -230,7 +224,7 @@ class SyncProcessor(private val mode: OperationMode) {
 
     @Throws(IOException::class)
     private fun createLocationsDB(workingDir: File): File {
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val today = dateFormat.format(Date())
         val dbFile = File(workingDir, "locations-$today.db")
         if (dbFile.exists()) {
