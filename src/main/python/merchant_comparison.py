@@ -623,7 +623,7 @@ def create_comparison_report_advanced(piggy_df, ctx_df, all_matches, enable_reve
 class MerchantComparisonGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Advanced Merchant Location Comparison Tool v3.0")
+        self.root.title("Advanced Merchant Location Comparison Tool v3.0.1")
         self.root.geometry("950x900")
         self.root.resizable(True, True)
         
@@ -682,7 +682,7 @@ class MerchantComparisonGUI:
                 'entry_fg': '#000000',
                 'button_bg': '#f0f0f0',
                 'button_fg': '#000000',
-                'frame_bg': '#f0f0f0',
+                'frame_bg': '#ffffff',
                 'text_bg': '#ffffff',
                 'text_fg': '#000000',
                 'select_bg': '#0078d4',
@@ -691,12 +691,12 @@ class MerchantComparisonGUI:
             'dark': {
                 'bg': '#2d2d2d',
                 'fg': '#ffffff',
-                'entry_bg': '#404040',
+                'entry_bg': '#2d2d2d',
                 'entry_fg': '#ffffff',
                 'button_bg': '#404040',
                 'button_fg': '#000000',
-                'frame_bg': '#353535',
-                'text_bg': '#1e1e1e',
+                'frame_bg': '#2d2d2d',
+                'text_bg': '#2d2d2d',
                 'text_fg': '#ffffff',
                 'select_bg': '#0078d4',
                 'select_fg': '#ffffff'
@@ -738,8 +738,17 @@ class MerchantComparisonGUI:
                 widget.configure(bg=theme['frame_bg'])
                 if hasattr(widget, 'configure') and 'fg' in widget.configure():
                     widget.configure(fg=theme['fg'])
-            elif widget_class == 'LabelFrame':
-                widget.configure(bg=theme['bg'], fg=theme['fg'])
+            if widget.winfo_class() in ("Labelframe", "TLabelframe"):  # tk vs ttk
+                try:  # ttk path
+                    import tkinter.ttk as ttk
+                    s = ttk.Style()
+                    s.theme_use('clam')  # Aqua ignores colors
+                    s.configure('Light.TLabelframe', background=theme['bg'])
+                    s.configure('Light.TLabelframe.Label',
+                                background=theme['bg'], foreground=theme['fg'])
+                    widget.configure(style='Light.TLabelframe')
+                except Exception:
+                    widget.configure(bg=theme['bg'], fg=theme['fg'])  # tk.LabelFrame
             elif widget_class == 'Label':
                 widget.configure(bg=theme['bg'], fg=theme['fg'])
             elif widget_class == 'Entry':
@@ -751,7 +760,7 @@ class MerchantComparisonGUI:
                 widget.configure(bg=theme['text_bg'], fg=theme['text_fg'], 
                                insertbackground=theme['fg'])
             elif widget_class == 'Checkbutton':
-                widget.configure(bg=theme['bg'], fg=theme['fg'], 
+                widget.configure(bg=theme['frame_bg'], fg=theme['fg'], 
                                selectcolor=theme['entry_bg'])
             elif widget_class == 'Scale':
                 widget.configure(bg=theme['bg'], fg=theme['fg'])
@@ -779,7 +788,7 @@ class MerchantComparisonGUI:
     
     def create_widgets(self):
         # Title
-        title_label = tk.Label(self.root, text="Advanced Merchant Location Comparison Tool v3.0", 
+        title_label = tk.Label(self.root, text="Advanced Merchant Location Comparison Tool v3.0.1", 
                               font=("Arial", 16, "bold"))
         title_label.pack(pady=10)
         
