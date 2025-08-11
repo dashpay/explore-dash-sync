@@ -19,6 +19,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
 
 private const val PROD_BASE_URL = "https://api.piggy.cards/dash/v1/"
 private const val DEV_BASE_URL = "https://apidev.piggy.cards/dash/v1/"
@@ -61,7 +62,13 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             val fee: Int,
             val quantity: Int,
             @SerializedName("brand_id") val brandId: Int
-        )
+        ) {
+            val isFixed = priceType == "Fixed"
+
+            fun toShortString(): String {
+                return "GiftCard(id=$id, name=$name, priceType=$priceType, currency=$currency, discount=$discountPercentage, min=$minDenomination, max=$maxDenomination, denom=$denomination, fee=$fee, brand=$brandId)"
+            }
+        }
 
         data class Location(
             val name: String,
@@ -180,6 +187,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                 if (giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
                     var discountPercentage = 0.0
+                    val immediateDeliveryCards = arrayListOf<Endpoint.Giftcard>()
                     giftcardsResponse.data?.forEach { giftcard ->
                         val info = if (giftcard.priceType == "Fixed") {
                             giftcard.denomination
@@ -188,9 +196,19 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                         }
                         logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}[$info ${giftcard.currency}], discount=${giftcard.discountPercentage}, inv=${giftcard.quantity}")
                         discountPercentage = max(discountPercentage, giftcard.discountPercentage)
+                        if (giftcard.name.contains("(immediate delivery)")) {
+                            immediateDeliveryCards.add(giftcard)
+                        }
+                    }
+                    
+                    // if immediate delivery cards are available, then they get priority
+                    if (immediateDeliveryCards.isNotEmpty()) {
+                        discountPercentage = immediateDeliveryCards.first().discountPercentage
                     }
 
-                    val giftcard = giftcardsResponse.data?.firstOrNull()
+                    // choose the first non-fixed card if available, otherwise the first card
+                    val giftcard = giftcardsResponse.data?.first { !it.isFixed }
+                        ?: giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
                     if (giftcard != null) {
                         // logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
                         val merchantData = convert(brand, giftcard)
