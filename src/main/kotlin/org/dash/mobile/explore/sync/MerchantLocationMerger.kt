@@ -39,7 +39,7 @@ class MerchantLocationMerger {
 
     data class MatchingParameters(
         val maxDistance: Double = 0.5,
-        val minNameSimilarity: Double = 0.5,
+        val minNameSimilarity: Double = 0.9,
         val minConfidence: Double = 0.7,
         val includeAddress: Boolean = true,
         val showAllMatches: Boolean = false,
@@ -74,7 +74,7 @@ class MerchantLocationMerger {
                 ignoreZip = true,
                 ignoreState = true,
                 ignoreCity = true,
-                ignoreName = true,
+                ignoreName = false,
                 showAllMatches = true
             )
         )
@@ -86,7 +86,8 @@ class MerchantLocationMerger {
             val maxSavings = max(ctxData.savingsPercentage ?: 0, piggyCardsData.savingsPercentage ?: 0)
             val mergedData = ctxData.copy(
                 merchantId = ctxData.merchantId,
-                savingsPercentage = maxSavings
+                savingsPercentage = maxSavings,
+                plusCode = "merged"
             )
             
             MerchantNameNormalizer.add(mergedData.name, mergedData.logoLocation, ctxData.merchantId)
@@ -103,6 +104,14 @@ class MerchantLocationMerger {
         }
         
         logger.info("matched items: {}", matched.size)
+        logger.info("Merchants with duplicates between CTX and PiggyCards")
+        resultsNew.map { it.name }.toSet().forEach {
+            logger.info("  $it")
+        }
+        logger.info("Merchants with duplicates between CTX and PiggyCards from matches")
+        matched.map { lists[0][it.ctxIndex].name }.toSet().forEach {
+            logger.info("  $it")
+        }
         saveMerchantDataToCsv(resultsNew, "dashspend-matched.csv")
 
         lists[0].forEachIndexed { index, ctxItem ->
@@ -271,7 +280,9 @@ class MerchantLocationMerger {
         piggyData: List<MerchantData>,
         ctxData: List<MerchantData>,
         coordinatePrecision: Int,
-        maxDistanceMiles: Double = 0.5
+        maxDistanceMiles: Double = 0.5,
+        ignoreName: Boolean,
+        nameSimularity: Double
     ): List<CoordinateMatch> {
         val coordinateMatches = mutableListOf<CoordinateMatch>()
 
@@ -302,8 +313,11 @@ class MerchantLocationMerger {
                         ctxRow.latitude ?: 0.0,
                         ctxRow.longitude ?: 0.0
                     )
-                    
-                    if (distance <= maxDistanceMiles) {
+
+                    val thisNameSimilarity = advancedNameSimilarity(ctxRow.name, piggyRow.name)
+                    val meetsNameRequirements = if (!ignoreName) thisNameSimilarity >= nameSimularity else true
+
+                    if (distance <= maxDistanceMiles && meetsNameRequirements) {
                         coordinateMatches.add(
                             CoordinateMatch(
                                 piggyIndex = piggyIndex,
@@ -434,7 +448,9 @@ class MerchantLocationMerger {
             piggyData, 
             ctxData, 
             parameters.coordinatePrecision, 
-            parameters.maxDistance
+            parameters.maxDistance,
+            parameters.ignoreName,
+            parameters.minNameSimilarity
         )
         
         val allMatches = mutableListOf<MatchInfo>()
@@ -627,8 +643,8 @@ class MerchantLocationMerger {
     private fun advancedNameSimilarity(name1: String?, name2: String?): Double {
         if (name1.isNullOrBlank() || name2.isNullOrBlank()) return 0.0
         
-        val normalized1 = name1.trim().lowercase()
-        val normalized2 = name2.trim().lowercase()
+        val normalized1 = MerchantNameNormalizer.removeSuffix(name1).lowercase()
+        val normalized2 = MerchantNameNormalizer.removeSuffix(name2).lowercase()
         
         return calculateSimilarity(normalized1, normalized2)
     }
