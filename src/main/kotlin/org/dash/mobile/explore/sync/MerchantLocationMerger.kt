@@ -51,7 +51,19 @@ class MerchantLocationMerger(private val debug: Boolean) {
     )
 
     fun combineMerchants(
-        lists: List<List<MerchantData>>
+        lists: List<List<MerchantData>>,
+        matchingParameters: MatchingParameters = MatchingParameters(
+            maxDistance = 0.2,
+            minNameSimilarity = 0.9,
+            minConfidence = 0.80,
+            includeAddress = true,
+            showAllMatches = true,
+            coordinatePrecision = 4,
+            ignoreState = true,
+            ignoreCity = true,
+            ignoreZip = true,
+            ignoreName = false
+        )
     ): CombinedResult {
         if (lists.isEmpty()) return CombinedResult(emptyList(), emptyList(), emptyList())
         val merchantProviderMap = mutableMapOf<String, GiftCardProvider>() // Key: merchantId_provider
@@ -66,17 +78,7 @@ class MerchantLocationMerger(private val debug: Boolean) {
         val matched = findMatchesAdvanced(
             lists[1],
             lists[0],
-            MatchingParameters(
-                maxDistance = 0.2,
-                minNameSimilarity = 0.90,
-                minConfidence = 0.80,
-                includeAddress = true,
-                ignoreZip = true,
-                ignoreState = true,
-                ignoreCity = true,
-                ignoreName = false,
-                showAllMatches = true
-            )
+            matchingParameters
         )
 
         val resultsNew = arrayListOf<MerchantData>()
