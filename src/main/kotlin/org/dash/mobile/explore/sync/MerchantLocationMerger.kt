@@ -7,6 +7,12 @@ import org.dash.mobile.explore.sync.utils.CSVExporter.saveMerchantDataToCsv
 import org.slf4j.LoggerFactory
 import kotlin.math.*
 
+data class CombinedResult(
+    val merchants: List<MerchantData>,
+    val giftCardProviders: Collection<GiftCardProvider>,
+    val matchInfo: List<MerchantLocationMerger.MatchInfo>
+)
+
 class MerchantLocationMerger {
     private val logger = LoggerFactory.getLogger(MerchantLocationMerger::class.java)!!
 
@@ -46,15 +52,15 @@ class MerchantLocationMerger {
 
     fun combineMerchants(
         lists: List<List<MerchantData>>
-    ): Pair<List<MerchantData>, Collection<GiftCardProvider>> {
-        if (lists.isEmpty()) return Pair(emptyList(), emptyList())
+    ): CombinedResult {
+        if (lists.isEmpty()) return CombinedResult(emptyList(), emptyList(), emptyList())
         val merchantProviderMap = mutableMapOf<String, GiftCardProvider>() // Key: merchantId_provider
         
         if (lists.size == 1) {
             lists.first().forEach {
-                addGiftcardProvider(it, merchantProviderMap)
+                addGiftcardProvider(it, it.merchantId!!, merchantProviderMap)
             }
-            return Pair(lists.first(), merchantProviderMap.values)
+            return CombinedResult(lists.first(), merchantProviderMap.values, emptyList())
         }
 
         val matched = findMatchesAdvanced(
@@ -86,8 +92,12 @@ class MerchantLocationMerger {
             MerchantNameNormalizer.add(mergedData.name, mergedData.logoLocation, ctxData.merchantId)
             
             // Add GiftCardProvider entries for both CTX and PiggyCards
-            addGiftcardProvider(ctxData, merchantProviderMap)
-            addGiftcardProvider(piggyCardsData.copy(merchantId = ctxData.merchantId), merchantProviderMap)
+            addGiftcardProvider(ctxData, ctxData.merchantId!!, merchantProviderMap)
+            addGiftcardProvider(
+                piggyCardsData.copy(merchantId = ctxData.merchantId),
+                piggyCardsData.merchantId!!,
+                merchantProviderMap
+            )
 
             resultsNew.add(mergedData)
         }
@@ -104,7 +114,7 @@ class MerchantLocationMerger {
                     logoLocation = MerchantNameNormalizer.getLogo(ctxItem.name)
                 )
                 resultsNew.add(newItem)
-                addGiftcardProvider(newItem, merchantProviderMap)
+                addGiftcardProvider(newItem, ctxItem.merchantId!!, merchantProviderMap)
             }
         }
 
@@ -135,14 +145,18 @@ class MerchantLocationMerger {
                             savingsPercentage = maxSavings
                         ))
                         // Add PiggyCards provider entry with the same merchantId
-                        addGiftcardProvider(newItem.copy(merchantId = existingOnlineItem.merchantId), merchantProviderMap)
+                        addGiftcardProvider(
+                            newItem.copy(merchantId = existingOnlineItem.merchantId),
+                            piggyCardsItem.merchantId!!,
+                            merchantProviderMap
+                        )
                     } else {
                         resultsNew.add(newItem)
-                        addGiftcardProvider(newItem, merchantProviderMap)
+                        addGiftcardProvider(newItem, piggyCardsItem.merchantId!!, merchantProviderMap)
                     }
                 } else {
                     resultsNew.add(newItem)
-                    addGiftcardProvider(newItem, merchantProviderMap)
+                    addGiftcardProvider(newItem, piggyCardsItem.merchantId!!, merchantProviderMap)
                 }
             }
         }
@@ -151,11 +165,12 @@ class MerchantLocationMerger {
         lists.forEach { count += it.size }
         logger.info("combining {} -> {}", count,  resultsNew.size)
         saveMerchantDataToCsv(resultsNew, "dashspend.csv")
-        return Pair(resultsNew, merchantProviderMap.values)
+        return CombinedResult(resultsNew, merchantProviderMap.values, matched)
     }
 
     private fun addGiftcardProvider(
-        merchant: MerchantData, 
+        merchant: MerchantData,
+        merchantId: String,
         merchantProviderMap: MutableMap<String, GiftCardProvider>
     ) {
         if (merchant.merchantId == null || merchant.source == null) return
@@ -166,7 +181,7 @@ class MerchantLocationMerger {
             merchantId = merchant.merchantId,
             active = merchant.active,
             provider = merchant.source,
-            sourceId = merchant.sourceId ?: merchant.merchantId,
+            sourceId = merchantId,
             redeemType = merchant.redeemType,
             savingsPercentage = merchant.savingsPercentage,
             denominationsType = merchant.denominationsType

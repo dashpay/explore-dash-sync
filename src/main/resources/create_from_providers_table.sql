@@ -1,0 +1,23 @@
+CREATE TABLE "from_providers" (
+    "merchantId"    TEXT,
+    "id"    INTEGER NOT NULL,
+    "active"    INTEGER DEFAULT 1,
+    "name"    TEXT,
+    "address1"    TEXT,
+    "address2"    TEXT,
+    "address3"    TEXT,
+    "address4"    TEXT,
+    "latitude"    REAL,
+    "longitude"    REAL,
+    "website"    TEXT,
+    "phone"    TEXT,
+    "territory"    TEXT,
+    "city"    TEXT,
+    "source"    TEXT,
+    "sourceId"    TEXT,
+    "type"    TEXT,
+    "redeemType"    TEXT,
+    "savingsPercentage"    INTEGER,
+    "denominationsType"    TEXT,
+    PRIMARY KEY("id" AUTOINCREMENT)
+);

@@ -6,6 +6,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
+import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.joran.JoranConfigurator
+import org.slf4j.LoggerFactory
 
 const val UPLOAD_ARG = "-upload"
 const val QUIET_ARG = "-quiet"
@@ -32,6 +35,7 @@ fun main(args: Array<String>) {
         quietMode = args.contains(QUIET_ARG)
         prodMode = args.contains(PROD_ARG)
     }
+    configureConsoleLogging()
 
     runBlocking {
         launch(Dispatchers.IO) {
@@ -41,4 +45,17 @@ fun main(args: Array<String>) {
     }
 
     exitProcess(0)
+}
+
+fun configureConsoleLogging() {
+    val context = LoggerFactory.getILoggerFactory() as LoggerContext
+    context.reset()
+    
+    val configurator = JoranConfigurator()
+    configurator.context = context
+    
+    val consoleConfigFile = Function::class.java.classLoader.getResource("logback-console.xml")
+    if (consoleConfigFile != null) {
+        configurator.doConfigure(consoleConfigFile)
+    }
 }
