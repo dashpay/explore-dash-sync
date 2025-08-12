@@ -2,7 +2,6 @@ package org.dash.mobile.explore.sync
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.system.exitProcess
@@ -41,11 +40,11 @@ fun main(args: Array<String>) {
     }
     configureConsoleLogging()
 
-    runBlocking {
-        launch(Dispatchers.IO) {
-            SyncProcessor(if (prodMode) OperationMode.PRODUCTION else OperationMode.TESTNET)
-                .syncData(File("."), upload, quietMode)
-        }
+    runBlocking(Dispatchers.IO) {
+        SyncProcessor(
+            if (prodMode) OperationMode.PRODUCTION else OperationMode.TESTNET,
+            debug = debugMode
+        ).syncData(File("."), upload, quietMode)
     }
 
     exitProcess(0)
