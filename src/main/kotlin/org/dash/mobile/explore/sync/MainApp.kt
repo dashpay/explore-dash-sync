@@ -13,14 +13,16 @@ import org.slf4j.LoggerFactory
 const val UPLOAD_ARG = "-upload"
 const val QUIET_ARG = "-quiet"
 const val PROD_ARG = "-prod"
+const val DEBUG_ARG = "-debug"
 
 @FlowPreview
 fun main(args: Array<String>) {
-    val validParams = setOf(UPLOAD_ARG, QUIET_ARG, PROD_ARG)
+    val validParams = setOf(UPLOAD_ARG, QUIET_ARG, PROD_ARG, DEBUG_ARG)
 
     var upload = false
     var quietMode = false
     var prodMode = false
+    var debugMode = false
 
     if (args.isNotEmpty()) {
         for (arg in args) {
@@ -28,12 +30,14 @@ fun main(args: Array<String>) {
                 println("Invalid argument $arg, use one of")
                 println("$UPLOAD_ARG - force upload data to GC Storage")
                 println("$QUIET_ARG - quiet mode: no notifications are pushed to Slack")
+                println("$DEBUG_ARG - output to CSV files for unit tests")
                 exitProcess(1)
             }
         }
         upload = args.contains(UPLOAD_ARG)
         quietMode = args.contains(QUIET_ARG)
         prodMode = args.contains(PROD_ARG)
+        debugMode = args.contains(DEBUG_ARG)
     }
     configureConsoleLogging()
 

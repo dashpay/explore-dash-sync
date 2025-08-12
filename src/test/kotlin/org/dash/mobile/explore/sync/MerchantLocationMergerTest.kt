@@ -18,7 +18,7 @@ class MerchantLocationMergerTest {
 
     @BeforeEach
     fun setUp() {
-        merger = MerchantLocationMerger()
+        merger = MerchantLocationMerger(false)
     }
 
     @Test

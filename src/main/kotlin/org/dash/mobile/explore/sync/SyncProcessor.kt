@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
 
 @FlowPreview
-class SyncProcessor(private val mode: OperationMode) {
+class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
     }
@@ -144,8 +144,10 @@ class SyncProcessor(private val mode: OperationMode) {
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
         var report = SyncReport(listOf(ctxReport, piggyCardsReport))
-
-        saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
+        if (debug) {
+            saveMerchantDataToCsv(ctxData, "ctx.csv")
+            saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
+        }
         var matchedInfo: List<MerchantLocationMerger.MatchInfo>? = null
 
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
@@ -153,7 +155,7 @@ class SyncProcessor(private val mode: OperationMode) {
             // merchant table
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val merger = MerchantLocationMerger()
+            val merger = MerchantLocationMerger(debug)
             val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
             logger.info("Duplicate locations: ${combinedMerchants.matchInfo.size}")
             val merchantSet = hashSetOf<String>()

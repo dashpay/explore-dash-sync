@@ -13,7 +13,7 @@ data class CombinedResult(
     val matchInfo: List<MerchantLocationMerger.MatchInfo>
 )
 
-class MerchantLocationMerger {
+class MerchantLocationMerger(private val debug: Boolean) {
     private val logger = LoggerFactory.getLogger(MerchantLocationMerger::class.java)!!
 
     data class CoordinateMatch(
@@ -112,8 +112,9 @@ class MerchantLocationMerger {
         matched.map { lists[0][it.ctxIndex].name }.toSet().forEach {
             logger.info("  $it")
         }
-        saveMerchantDataToCsv(resultsNew, "dashspend-matched.csv")
-
+        if (debug) {
+            saveMerchantDataToCsv(resultsNew, "dashspend-matched.csv")
+        }
         lists[0].forEachIndexed { index, ctxItem ->
             if (matched.none { it.ctxIndex == index }) {
                 MerchantNameNormalizer.add(ctxItem.name, ctxItem.logoLocation, ctxItem.merchantId)
@@ -173,7 +174,9 @@ class MerchantLocationMerger {
         var count = 0
         lists.forEach { count += it.size }
         logger.info("combining {} -> {}", count,  resultsNew.size)
-        saveMerchantDataToCsv(resultsNew, "dashspend.csv")
+        if (debug) {
+            saveMerchantDataToCsv(resultsNew, "dashspend.csv")
+        }
         return CombinedResult(resultsNew, merchantProviderMap.values, matched)
     }
 
