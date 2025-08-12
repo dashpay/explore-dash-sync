@@ -29,7 +29,7 @@ class MerchantLocationMergerTest {
         
         // Combine merchants
         val result = merger.combineMerchants(listOf(ctxData, piggyCardsData))
-        val combinedMerchants = result.first
+        val combinedMerchants = result.merchants
         
         // Save result to project root directory
         //val outputFile = tempDir.resolve("actual_output.csv")
@@ -65,7 +65,7 @@ class MerchantLocationMergerTest {
             assertNotNull(firstActual.source)
             assertNotNull(firstActual.name)
             assertNotNull(firstActual.paymentMethod)
-            assertEquals(expectedData.size, combinedMerchants.size)
+            assertEquals(expectedData.size, combinedMerchants.size, findMerchantDataDifferences(expectedData, combinedMerchants, "all").toString())
         }
         
         println("Test completed successfully:")
@@ -80,8 +80,8 @@ class MerchantLocationMergerTest {
     @Test
     fun testCombineMerchantsWithEmptyLists() {
         val result = merger.combineMerchants(emptyList())
-        assertEquals(0, result.first.size)
-        assertEquals(0, result.second.size)
+        assertEquals(0, result.merchants.size)
+        assertEquals(0, result.matchInfo.size)
     }
 
     @Test
@@ -91,8 +91,8 @@ class MerchantLocationMergerTest {
         val result = merger.combineMerchants(listOf(ctxData))
         
         // Should return the single list as-is
-        assertTrue(result.first.isNotEmpty())
-        assertEquals(ctxData.size, result.first.size)
+        assertTrue(result.merchants.isNotEmpty())
+        assertEquals(ctxData.size, result.merchants.size)
     }
 
     @Test
@@ -175,6 +175,69 @@ class MerchantLocationMergerTest {
         
         val realWorldMatch3 = merger.advancedNameSimilarity("CVS Pharmacy", "CVS")
         assertTrue(realWorldMatch3 > 0.2, "CVS variations should have decent similarity")
+    }
+
+    @Test
+    fun testFindListDifferences() {
+        // Create test data
+        val list1 = listOf(
+            MerchantData().apply { merchantId = "1"; name = "McDonald's" },
+            MerchantData().apply { merchantId = "2"; name = "Starbucks" },
+            MerchantData().apply { merchantId = "3"; name = "Walmart" }
+        )
+        
+        val list2 = listOf(
+            MerchantData().apply { merchantId = "2"; name = "Starbucks" },
+            MerchantData().apply { merchantId = "3"; name = "Walmart" },
+            MerchantData().apply { merchantId = "4"; name = "Target" }
+        )
+        
+        // Test by merchantId (default)
+        val (onlyInList1, onlyInList2) = findListDifferences(list1, list2)
+        
+        assertEquals(1, onlyInList1.size, "Should find 1 item only in list1")
+        assertEquals("1", onlyInList1[0].merchantId, "Should find McDonald's only in list1")
+        
+        assertEquals(1, onlyInList2.size, "Should find 1 item only in list2")  
+        assertEquals("4", onlyInList2[0].merchantId, "Should find Target only in list2")
+    }
+
+    @Test
+    fun testFindMerchantDataDifferencesByName() {
+        // Create test data with same names but different IDs
+        val list1 = listOf(
+            MerchantData().apply { merchantId = "ctx-1"; name = "McDonald's" },
+            MerchantData().apply { merchantId = "ctx-2"; name = "Starbucks" }
+        )
+        
+        val list2 = listOf(
+            MerchantData().apply { merchantId = "pc-1"; name = "mcdonald's" }, // Same name, different case
+            MerchantData().apply { merchantId = "pc-3"; name = "Target" }
+        )
+        
+        // Test by name - should find McDonald's as duplicate due to case-insensitive comparison
+        val (onlyInList1, onlyInList2) = findMerchantDataDifferences(list1, list2, "name")
+        
+        assertEquals(1, onlyInList1.size, "Should find 1 item only in list1")
+        assertEquals("Starbucks", onlyInList1[0].name, "Should find Starbucks only in list1")
+        
+        assertEquals(1, onlyInList2.size, "Should find 1 item only in list2")
+        assertEquals("Target", onlyInList2[0].name, "Should find Target only in list2")
+    }
+
+    @Test
+    fun testFindListDifferencesWithCustomKeySelector() {
+        val list1 = listOf("apple", "banana", "cherry")
+        val list2 = listOf("BANANA", "cherry", "date")
+        
+        // Test with case-insensitive comparison
+        val (onlyInList1, onlyInList2) = findListDifferences(list1, list2) { it.lowercase() }
+        
+        assertEquals(1, onlyInList1.size, "Should find 1 item only in list1") 
+        assertEquals("apple", onlyInList1[0], "Should find 'apple' only in list1")
+        
+        assertEquals(1, onlyInList2.size, "Should find 1 item only in list2")
+        assertEquals("date", onlyInList2[0], "Should find 'date' only in list2")
     }
 
     // Helper function to access private methods for testing
@@ -313,5 +376,82 @@ class MerchantLocationMergerTest {
         if (index == -1 || index >= values.size) return null
         val value = values[index].trim()
         return if (value.isEmpty()) null else value
+    }
+
+    /**
+     * Efficiently finds differences between two lists of MerchantData using HashMap lookups.
+     * Time complexity: O(n + m) where n and m are the sizes of the input lists.
+     * Space complexity: O(n + m) for the HashMaps.
+     *
+     * @param list1 First list of MerchantData
+     * @param list2 Second list of MerchantData  
+     * @param keySelector Function to extract a unique key from MerchantData (defaults to merchantId)
+     * @return Pair of (items only in list1, items only in list2)
+     */
+    fun <T> findListDifferences(
+        list1: List<T>, 
+        list2: List<T>, 
+        keySelector: (T) -> String? = { 
+            when (it) {
+                is MerchantData -> it.merchantId
+                else -> it.toString()
+            }
+        }
+    ): Pair<List<T>, List<T>> {
+        // Create HashMaps for O(1) lookup - filter out null keys
+        val map1 = list1.mapNotNull { item ->
+            keySelector(item)?.let { key -> key to item }
+        }.toMap()
+        
+        val map2 = list2.mapNotNull { item ->
+            keySelector(item)?.let { key -> key to item }
+        }.toMap()
+        
+        // Find items only in list1 (not in list2)
+        val onlyInList1 = list1.filter { item ->
+            val key = keySelector(item)
+            key != null && !map2.containsKey(key)
+        }
+        
+        // Find items only in list2 (not in list1) 
+        val onlyInList2 = list2.filter { item ->
+            val key = keySelector(item)
+            key != null && !map1.containsKey(key)
+        }
+        
+        return Pair(onlyInList1, onlyInList2)
+    }
+
+    /**
+     * Specialized version for MerchantData that compares by multiple criteria
+     * for more accurate duplicate detection.
+     * 
+     * @param list1 First list of MerchantData
+     * @param list2 Second list of MerchantData
+     * @param compareBy Comparison strategy: "merchantId", "name", "location", or "composite"
+     * @return Pair of (items only in list1, items only in list2)
+     */
+    fun findMerchantDataDifferences(
+        list1: List<MerchantData>,
+        list2: List<MerchantData>,
+        compareBy: String = "composite"
+    ): Pair<List<MerchantData>, List<MerchantData>> {
+        val keySelector: (MerchantData) -> String? = when (compareBy) {
+            "merchantId" -> { merchant -> merchant.merchantId }
+            "name" -> { merchant -> merchant.name?.lowercase()?.trim() }
+            "location" -> { merchant -> 
+                "${merchant.latitude}_${merchant.longitude}"
+            }
+            "composite" -> { merchant ->
+                // Composite key: name + approximate location (rounded to avoid floating point issues)
+                val lat = merchant.latitude?.let { "%.4f".format(it) } ?: "null"
+                val lon = merchant.longitude?.let { "%.4f".format(it) } ?: "null"
+                "${merchant.name?.lowercase()?.trim()}_${lat}_${lon}"
+            }
+            "all" -> { merchant -> merchant.toString() }
+            else -> { merchant -> merchant.merchantId }
+        }
+        
+        return findListDifferences(list1, list2, keySelector)
     }
 }
