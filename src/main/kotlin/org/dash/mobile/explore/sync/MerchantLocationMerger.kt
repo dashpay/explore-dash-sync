@@ -5,6 +5,7 @@ import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.process.data.GiftCardProvider
 import org.dash.mobile.explore.sync.utils.CSVExporter.saveMerchantDataToCsv
 import org.slf4j.LoggerFactory
+import java.util.Locale
 import kotlin.math.*
 
 data class CombinedResult(
@@ -603,7 +604,7 @@ class MerchantLocationMerger(private val debug: Boolean) {
                         nameSimilarity = nameSim,
                         addressSimilarity = streetAddrSim,
                         confidence = confidence,
-                        reasons = "coordinate_priority_proximity, distance_${String.format("%.3f", distance)}mi",
+                        reasons = "coordinate_priority_proximity, distance_${String.format(Locale.US, "%.3f", distance)}mi",
                         cityMatch = !parameters.ignoreCity,
                         stateMatch = !parameters.ignoreState,
                         geographicWarning = ""
