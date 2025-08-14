@@ -315,6 +315,6 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
     }
 
     fun getReport(): DataSourceReport {
-        return dataSourceReport!!
+        return dataSourceReport ?: throw IllegalStateException("Report not yet generated. Call getRawData() first.")
     }
 }

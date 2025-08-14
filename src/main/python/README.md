@@ -1,5 +1,9 @@
 # Advanced Merchant Location Comparison Tool
 
+## Requirements
+- Python 3.7 or higher
+- pip package manager
+
 ## Setup Instructions
 
 ### 1. Create Virtual Environment

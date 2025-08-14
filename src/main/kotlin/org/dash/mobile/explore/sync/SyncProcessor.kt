@@ -111,7 +111,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 gcManager.uploadObject(locationsDbFile, timestamp, dbFileChecksum)
             } else {
                 logger.notice("No changes were detected, updating canceled")
-                slackMessenger.postSlackMessage("No changes detected, updating canceled", logger)
+                slackMessenger.postSlackMessage("No changes detected, updating canceled")
             }
 
             slackMessenger.postSlackMessage("### Sync finished ###", logger)
@@ -122,7 +122,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             gcManager.deleteLockFile()
         } catch (ex: Exception) {
             logger.error(ex.message, ex)
-            slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}", logger)
+            slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}")
             gcManager.deleteLockFile()
         }
     }
@@ -288,8 +288,8 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                     }
                 }
                 
-                logger.info("Loaded ${ctxLocations.size} CTX locations and ${piggyCardsLocations.size} PiggyCards locations from previous database", logger)
-                logger.info("Found ${previousCTXMerchants.size} distinct CTX merchant names and ${previousPiggyCardsMerchants.size} distinct PiggyCards merchant names", logger)
+                logger.info("Loaded ${ctxLocations.size} CTX locations and ${piggyCardsLocations.size} PiggyCards locations from previous database")
+                logger.info("Found ${previousCTXMerchants.size} distinct CTX merchant names and ${previousPiggyCardsMerchants.size} distinct PiggyCards merchant names")
 
                 val currentCTXMerchants = ctxDataSource.merchantList.toList()
                 val (newCTX, removedCTX) = findListDifferences(previousCTXMerchants, currentCTXMerchants) {

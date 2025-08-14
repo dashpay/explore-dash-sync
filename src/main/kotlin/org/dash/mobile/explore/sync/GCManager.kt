@@ -123,9 +123,9 @@ class GCManager(private val mode: OperationMode) {
         }
         
         val mostRecentBlob = locationsBlobs.maxByOrNull { blob ->
-            val dateStr = blob.name.substringAfter("locations-").substringBefore(".db")
+            val dateStr = blob.name.substringAfter("locations-$mode-").substringBefore(".db")
             try {
-                LocalDate.parse(dateStr, DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+                LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_TIME)
             } catch (e: Exception) {
                 logger.warn("Unable to parse date from filename: ${blob.name}", e)
                 LocalDate.MIN

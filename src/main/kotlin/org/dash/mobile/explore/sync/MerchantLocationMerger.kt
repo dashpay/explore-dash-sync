@@ -180,6 +180,16 @@ class MerchantLocationMerger(private val debug: Boolean) {
         if (debug) {
             saveMerchantDataToCsv(resultsNew, "dashspend.csv")
         }
+        // Deduplicate by composite key: normalized name + 4dp lat/lon + type
+        val seen = HashSet<String>()
+        val deduped = resultsNew.filter { m ->
+            val normName = MerchantNameNormalizer.getNormalizedName(m.name) ?: ""
+            val lat = m.latitude?.let { "%.4f".format(Locale.US, it) } ?: "null"
+            val lon = m.longitude?.let { "%.4f".format(Locale.US, it) } ?: "null"
+            val key = "$normName|$lat|$lon|${m.type}"
+            seen.add(key)
+        }
+        logger.info("deduped count: {} vs original count: {}", deduped.size, resultsNew.size)
         return CombinedResult(resultsNew, merchantProviderMap.values, matched)
     }
 

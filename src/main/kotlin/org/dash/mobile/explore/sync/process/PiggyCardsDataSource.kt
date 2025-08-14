@@ -265,7 +265,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         }
         logger.info("PiggyCards - imported $locationCount records (invalid ${ 
             invalidLocations.map { it.value.name }.joinToString(", ") 
-        })", logger)
+        })")
 
     }
 
@@ -329,6 +329,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
     }
 
     fun getReport(): DataSourceReport {
-        return dataSourceReport!!
+        return dataSourceReport ?: throw IllegalStateException("Report not yet generated. Call getRawData() first.")
     }
 }
