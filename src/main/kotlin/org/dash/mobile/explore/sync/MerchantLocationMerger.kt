@@ -187,7 +187,11 @@ class MerchantLocationMerger(private val debug: Boolean) {
             val lat = m.latitude?.let { "%.4f".format(Locale.US, it) } ?: "null"
             val lon = m.longitude?.let { "%.4f".format(Locale.US, it) } ?: "null"
             val key = "$normName|$lat|$lon|${m.type}"
-            seen.add(key)
+            val result = seen.add(key)
+            if (!result) {
+                logger.info("  non-matched duplicate found: {}, ({}, {}) from {}", normName, lat, lon, m.source)
+            }
+            result
         }
         logger.info("deduped count: {} vs original count: {}", deduped.size, resultsNew.size)
         return CombinedResult(resultsNew, merchantProviderMap.values, matched)
