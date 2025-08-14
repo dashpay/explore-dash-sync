@@ -196,7 +196,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                         }
                         logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}[$info ${giftcard.currency}], discount=${giftcard.discountPercentage}, inv=${giftcard.quantity}")
                         discountPercentage = max(discountPercentage, giftcard.discountPercentage)
-                        if (giftcard.name.contains("(immediate delivery)")) {
+                        if (giftcard.name.lowercase().contains("(instant delivery)")) {
                             immediateDeliveryCards.add(giftcard)
                         }
                     }
