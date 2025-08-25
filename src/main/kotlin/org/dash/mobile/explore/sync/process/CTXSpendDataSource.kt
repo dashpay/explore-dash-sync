@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import org.dash.mobile.explore.sync.DataSourceReport
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -19,6 +20,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.let
 
 private const val BASE_URL = "https://spend.ctx.com/"
 
@@ -27,8 +29,9 @@ private const val BASE_URL = "https://spend.ctx.com/"
  */
 class CTXSpendDataSource(slackMessenger: SlackMessenger) :
     DataSource<MerchantData>(slackMessenger) {
-
     override val logger = LoggerFactory.getLogger(CTXSpendDataSource::class.java)!!
+    val merchantList = hashSetOf<String>()
+    var dataSourceReport: DataSourceReport? = null
 
     interface Endpoint {
         data class Pagination(
@@ -101,9 +104,9 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
         val pageSize = 100
         var currentPageIndex = 1
         var totalPages = currentPageIndex + 1
-        var counter = 0
 
         val merchants = linkedMapOf<String, JsonObject>()
+        val disabledMerchants = linkedMapOf<String, JsonObject>()
 
         while (currentPageIndex < totalPages) {
             try {
@@ -119,8 +122,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                     val pagination = response.pagination
                     totalPages = pagination.pages + 1
                     currentPageIndex = pagination.page + 1
-                    var currentRows = 0
-                    currentRows = responseData.size()
+                    val currentRows = responseData.size()
                     logger.info("CTXSpend Merchants ${currentPageIndex - 1}/${totalPages - 1} ($currentRows)")
                     logger.info("CTXSpend Merchants / totalRows: ${pagination.total}")
 
@@ -134,8 +136,9 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                         val disabled = !merchantData["enabled"].asBoolean
                         if (!disabled) {
                             merchants[merchantData["id"].asString] = merchantData.deepCopy()
+                            merchantList.add(merchantData["name"].asString)
                         } else {
-                            logger.info("merchant disabled: {}", merchants["name"])
+                            disabledMerchants[merchantData["id"].asString] = merchantData.deepCopy()
                         }
                     }
                 } else {
@@ -149,13 +152,15 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
                 throw ex
             }
         }
+        logger.info("CTXSpend Merchants: ${merchants.size}")
+        logger.info("CTXSpend Disabled Merchants: (${disabledMerchants.map { it.value["name"] }.joinToString(", ") }.)")
         // load locations
-        counter = 0
+        var counter = 0
         val locationResponse = apiService.getAllMerchantLocations(apiKey, apiSecret)
+        val invalidLocations = linkedMapOf<String, JsonObject>()
 
         if (!locationResponse.isJsonNull && !locationResponse.isEmpty) {
-            logger.info("CTXSpend Locations: ${locationResponse.size()}")
-
+            logger.info("CTXSpend Locations Records: ${locationResponse.size()}")
             locationResponse.forEach { location ->
                 val locationData = location.asJsonObject
 
@@ -170,17 +175,29 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
 
                         if (merchantData.name.isNullOrEmpty() || merchantData.address1?.contains("Address 1") == true) {
                             invalid++
+                            invalidLocations[locationData["merchantId"].asString] = locationData
                         } else {
                             emit(merchantData)
                         }
                     } else {
                         invalid++
+                        invalidLocations[locationData["id"].asString] = locationData
+
                     }
                 } ?: logMissingMerchant(merchantId, merchants)
             }
         }
-        logger.notice("CTXSpend - imported $counter records (inactive $inactive, invalid $invalid, missing ${missingMerchants})")
-        slackMessenger.postSlackMessage("CTXSpend $counter records")
+        logger.info("CTXSpend $counter records (inactive $inactive, invalid (${ 
+            invalidLocations.map { 
+                it.value["merchantId"]
+            }.joinToString(", ") 
+        }), locations missing ${missingMerchants})")
+        dataSourceReport = DataSourceReport(
+            "CTX",
+            merchants.size,
+            counter,
+            disabledMerchants.map { it.value["name"].asString }
+        )
     }
 
     private val missingMerchants = hashSetOf<String>()
@@ -213,7 +230,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
             longitude = getLongitude(location)
             website = convertJsonData("website", merchantData)
             phone = convertJsonData("phone", location)
-            val inState = location.get("territory")
+            val inState = location["territory"]
             inState?.let {
                 fixStateName(inState)?.apply {
                     territory = this
@@ -229,7 +246,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
             savingsPercentage = convertJsonData("savingsPercentage", merchantData)
             denominationsType = convertJsonData("denominationsType", merchantData)
 
-            // TODO: Does CTX have these fields?
+            // TODO: Does CTX have these fields? no
             monOpen = convertJsonData("MondayOpen", location)
             monClose = convertJsonData("MondayClose", location)
             tueOpen = convertJsonData("TuesdayOpen", location)
@@ -295,5 +312,9 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
 
     private fun getLongitude(location: JsonObject): Double? {
         return convertJsonData("longitude", location)
+    }
+
+    fun getReport(): DataSourceReport {
+        return dataSourceReport ?: throw IllegalStateException("Report not yet generated. Call getRawData() first.")
     }
 }

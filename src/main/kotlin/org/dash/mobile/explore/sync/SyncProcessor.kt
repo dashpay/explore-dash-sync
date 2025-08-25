@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
 
 @FlowPreview
-class SyncProcessor(private val mode: OperationMode) {
+class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
     }
@@ -80,12 +80,6 @@ class SyncProcessor(private val mode: OperationMode) {
                 OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
             }
 
-            val dbFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-uncompressed.db"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet-uncompressed.db"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet-uncompressed.db"
-            }
-
             val dbZipFile = File(workingDir, dbZipFileName)
 
             val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
@@ -117,7 +111,7 @@ class SyncProcessor(private val mode: OperationMode) {
                 gcManager.uploadObject(locationsDbFile, timestamp, dbFileChecksum)
             } else {
                 logger.notice("No changes were detected, updating canceled")
-                slackMessenger.postSlackMessage("No changes detected, updating canceled", logger)
+                slackMessenger.postSlackMessage("No changes detected, updating canceled")
             }
 
             slackMessenger.postSlackMessage("### Sync finished ###", logger)
@@ -128,7 +122,7 @@ class SyncProcessor(private val mode: OperationMode) {
             gcManager.deleteLockFile()
         } catch (ex: Exception) {
             logger.error(ex.message, ex)
-            slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}", logger)
+            slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}")
             gcManager.deleteLockFile()
         }
     }
@@ -142,19 +136,36 @@ class SyncProcessor(private val mode: OperationMode) {
 
     @Throws(SQLException::class)
     private suspend fun importData(dbFile: File, locationsDbFile: File) {
-        val ctxData = CTXSpendDataSource(slackMessenger).getDataList()
+        val ctxDataSource = CTXSpendDataSource(slackMessenger)
+        val ctxData = ctxDataSource.getDataList()
+        val ctxReport = ctxDataSource.getReport()
         saveMerchantDataToCsv(ctxData, "ctx.csv")
-        val piggyCardsData = PiggyCardsDataSource(slackMessenger).getDataList()
-        saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
+        val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger)
+        val piggyCardsData = piggyCardsDataSource.getDataList()
+        val piggyCardsReport = piggyCardsDataSource.getReport()
+        var report = SyncReport(listOf(ctxReport, piggyCardsReport))
+        if (debug) {
+            saveMerchantDataToCsv(ctxData, "ctx.csv")
+            saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
+        }
         var matchedInfo: List<MerchantLocationMerger.MatchInfo>? = null
-        
+
         val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
         val combinedMerchants = try {
             // merchant table
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
             val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
-            val merger = MerchantLocationMerger()
+            val merger = MerchantLocationMerger(debug)
             val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
+            logger.info("Duplicate locations: ${combinedMerchants.matchInfo.size}")
+            val merchantSet = hashSetOf<String>()
+            combinedMerchants.giftCardProviders.forEach { merchantSet.add(it.merchantId!!) }
+            logger.info("Total merchants: ${merchantSet.size}")
+            logger.info("Total Locations: ${combinedMerchants.merchants.size}")
+            report.mergedLocations = combinedMerchants.matchInfo.size
+            report.totalMerchants = merchantSet.size
+            report.totalLocations = combinedMerchants.merchants.size
+
             matchedInfo = combinedMerchants.matchInfo
             val combinedMerchantsFlow = combinedMerchants.merchants.asFlow().transform { data ->
                 data.transferInto(prepStatement)
@@ -186,6 +197,124 @@ class SyncProcessor(private val mode: OperationMode) {
                 dbConnection.close()
             }
         }
+
+        // Compare to the previously created database
+        val previousLocationsFile = gcManager.downloadMostRecentLocationsDb()
+        
+        val ctxLocations = mutableListOf<MerchantData>()
+        val piggyCardsLocations = mutableListOf<MerchantData>()
+
+        previousLocationsFile?.let { locationFile ->
+            logger.info("Loading previous locations data from ${locationFile.name}")
+            val previousDbConnection = DriverManager.getConnection("jdbc:sqlite:${locationFile.path}")
+            try {
+                // Load CTX records
+                val ctxQuery = "SELECT * FROM from_providers WHERE source = 'CTX'"
+                previousDbConnection.prepareStatement(ctxQuery).use { statement ->
+                    val resultSet = statement.executeQuery()
+                    while (resultSet.next()) {
+                        ctxLocations.add(MerchantData(
+                            merchantId = resultSet.getString("merchantId"),
+                            active = resultSet.getInt("active") == 1,
+                            name = resultSet.getString("name"),
+                            address1 = resultSet.getString("address1"),
+                            address2 = resultSet.getString("address2"),
+                            address3 = resultSet.getString("address3"),
+                            address4 = resultSet.getString("address4"),
+                            latitude = resultSet.getObject("latitude") as Double?,
+                            longitude = resultSet.getObject("longitude") as Double?,
+                            website = resultSet.getString("website"),
+                            phone = resultSet.getString("phone"),
+                            territory = resultSet.getString("territory"),
+                            city = resultSet.getString("city"),
+                            source = resultSet.getString("source"),
+                            sourceId = resultSet.getString("sourceId"),
+                            type = resultSet.getString("type"),
+                            redeemType = resultSet.getString("redeemType"),
+                            savingsPercentage = resultSet.getObject("savingsPercentage") as Int?,
+                            denominationsType = resultSet.getString("denominationsType")
+                        ))
+                    }
+                }
+                
+                // Load PiggyCards records
+                val piggyQuery = "SELECT * FROM from_providers WHERE source = 'PiggyCards'"
+                previousDbConnection.prepareStatement(piggyQuery).use { statement ->
+                    val resultSet = statement.executeQuery()
+                    while (resultSet.next()) {
+                        piggyCardsLocations.add(MerchantData(
+                            merchantId = resultSet.getString("merchantId"),
+                            active = resultSet.getInt("active") == 1,
+                            name = resultSet.getString("name"),
+                            address1 = resultSet.getString("address1"),
+                            address2 = resultSet.getString("address2"),
+                            address3 = resultSet.getString("address3"),
+                            address4 = resultSet.getString("address4"),
+                            latitude = resultSet.getObject("latitude") as Double?,
+                            longitude = resultSet.getObject("longitude") as Double?,
+                            website = resultSet.getString("website"),
+                            phone = resultSet.getString("phone"),
+                            territory = resultSet.getString("territory"),
+                            city = resultSet.getString("city"),
+                            source = resultSet.getString("source"),
+                            sourceId = resultSet.getString("sourceId"),
+                            type = resultSet.getString("type"),
+                            redeemType = resultSet.getString("redeemType"),
+                            savingsPercentage = resultSet.getObject("savingsPercentage") as Int?,
+                            denominationsType = resultSet.getString("denominationsType")
+                        ))
+                    }
+                }
+                
+                // Query distinct names from both sources
+                val previousCTXMerchants = mutableListOf<String>()
+                val previousPiggyCardsMerchants = mutableListOf<String>()
+                
+                // Load distinct CTX names
+                val ctxNamesQuery = "SELECT DISTINCT name FROM from_providers WHERE source = 'CTX' AND name IS NOT NULL"
+                previousDbConnection.prepareStatement(ctxNamesQuery).use { statement ->
+                    val resultSet = statement.executeQuery()
+                    while (resultSet.next()) {
+                        previousCTXMerchants.add(resultSet.getString("name"))
+                    }
+                }
+                
+                // Load distinct PiggyCards names
+                val piggyNamesQuery = "SELECT DISTINCT name FROM from_providers WHERE source = 'PiggyCards' AND name IS NOT NULL"
+                previousDbConnection.prepareStatement(piggyNamesQuery).use { statement ->
+                    val resultSet = statement.executeQuery()
+                    while (resultSet.next()) {
+                        previousPiggyCardsMerchants.add(resultSet.getString("name"))
+                    }
+                }
+                
+                logger.info("Loaded ${ctxLocations.size} CTX locations and ${piggyCardsLocations.size} PiggyCards locations from previous database")
+                logger.info("Found ${previousCTXMerchants.size} distinct CTX merchant names and ${previousPiggyCardsMerchants.size} distinct PiggyCards merchant names")
+
+                val currentCTXMerchants = ctxDataSource.merchantList.toList()
+                val (newCTX, removedCTX) = findListDifferences(previousCTXMerchants, currentCTXMerchants) {
+                    it
+                }
+                logger.info("CTX New merchants: $newCTX")
+                logger.info("CTX Removed merchants: $removedCTX")
+                 report.updateDataSourceReport(report["CTX"]!!.copy(newMerchants = newCTX, removedMerchants =  removedCTX))
+
+                val currentPiggyCardsMerchants = piggyCardsDataSource.merchantList.toList()
+                val (newPC, removedPC) = findListDifferences(previousPiggyCardsMerchants, currentPiggyCardsMerchants) {
+                    it
+                }
+                logger.info("PiggyCards New merchants: $newPC")
+                logger.info("PiggyCards Removed merchants: $removedPC")
+                report.updateDataSourceReport(report["PiggyCards"]!!.copy(newMerchants = newPC, removedMerchants =  removedPC))
+            } catch (ex: SQLException) {
+                logger.warn("Failed to load previous locations data: ${ex.message}")
+            } finally {
+                if (!previousDbConnection.isClosed) {
+                    previousDbConnection.close()
+                }
+            }
+        }
+
 
         // Process locations database
         val locationsDbConnection = DriverManager.getConnection("jdbc:sqlite:${locationsDbFile.path}")
@@ -230,9 +359,9 @@ class SyncProcessor(private val mode: OperationMode) {
 
     @Throws(IOException::class)
     private fun createLocationsDB(workingDir: File): File {
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val today = dateFormat.format(Date())
-        val dbFile = File(workingDir, "locations-$today.db")
+        val dbFile = File(workingDir, "locations-$mode-$today.db")
         if (dbFile.exists()) {
             dbFile.delete()
         }
@@ -249,6 +378,16 @@ class SyncProcessor(private val mode: OperationMode) {
             }
             it.checksum.value.toString(16)
         }
+    }
+
+    private fun <T> findListDifferences(previous: List<T>, current: List<T>, keySelector: (T) -> Any): Pair<List<T>, List<T>> {
+        val previousKeys = previous.associateBy(keySelector)
+        val currentKeys = current.associateBy(keySelector)
+        
+        val newItems = current.filter { keySelector(it) !in previousKeys }
+        val removedItems = previous.filter { keySelector(it) !in currentKeys }
+        
+        return Pair(newItems, removedItems)
     }
 
     private suspend fun <T> syncData(data: Flow<T>, prepStatement: PreparedStatement) where T : Data {
@@ -308,37 +447,35 @@ class SyncProcessor(private val mode: OperationMode) {
 
         connection.prepareStatement(insertSQL).use { prepStatement ->
             for (merchant in data) {
-                if (merchant.type == "physical") {
-                    prepStatement.setString(1, merchant.merchantId)
-                    prepStatement.setInt(2, if (merchant.active == true) 1 else 0)
-                    prepStatement.setString(3, merchant.name)
-                    prepStatement.setString(4, merchant.address1)
-                    prepStatement.setString(5, merchant.address2)
-                    prepStatement.setString(6, merchant.address3)
-                    prepStatement.setString(7, merchant.address4)
-                    merchant.latitude?.let { prepStatement.setDouble(8, it) } ?: prepStatement.setNull(
-                        8,
-                        java.sql.Types.REAL
-                    )
-                    merchant.longitude?.let { prepStatement.setDouble(9, it) } ?: prepStatement.setNull(
-                        9,
-                        java.sql.Types.REAL
-                    )
-                    prepStatement.setString(10, merchant.website)
-                    prepStatement.setString(11, merchant.phone)
-                    prepStatement.setString(12, merchant.territory)
-                    prepStatement.setString(13, merchant.city)
-                    prepStatement.setString(14, merchant.source)
-                    prepStatement.setString(15, merchant.sourceId)
-                    prepStatement.setString(16, merchant.type)
-                    prepStatement.setString(17, merchant.redeemType)
-                    merchant.savingsPercentage?.let { prepStatement.setInt(18, it) } ?: prepStatement.setNull(
-                        18,
-                        java.sql.Types.INTEGER
-                    )
-                    prepStatement.setString(19, merchant.denominationsType)
-                    prepStatement.addBatch()
-                }
+                prepStatement.setString(1, merchant.merchantId)
+                prepStatement.setInt(2, if (merchant.active == true) 1 else 0)
+                prepStatement.setString(3, merchant.name)
+                prepStatement.setString(4, merchant.address1)
+                prepStatement.setString(5, merchant.address2)
+                prepStatement.setString(6, merchant.address3)
+                prepStatement.setString(7, merchant.address4)
+                merchant.latitude?.let { prepStatement.setDouble(8, it) } ?: prepStatement.setNull(
+                    8,
+                    java.sql.Types.REAL
+                )
+                merchant.longitude?.let { prepStatement.setDouble(9, it) } ?: prepStatement.setNull(
+                    9,
+                    java.sql.Types.REAL
+                )
+                prepStatement.setString(10, merchant.website)
+                prepStatement.setString(11, merchant.phone)
+                prepStatement.setString(12, merchant.territory)
+                prepStatement.setString(13, merchant.city)
+                prepStatement.setString(14, merchant.source)
+                prepStatement.setString(15, merchant.sourceId)
+                prepStatement.setString(16, merchant.type)
+                prepStatement.setString(17, merchant.redeemType)
+                merchant.savingsPercentage?.let { prepStatement.setInt(18, it) } ?: prepStatement.setNull(
+                    18,
+                    java.sql.Types.INTEGER
+                )
+                prepStatement.setString(19, merchant.denominationsType)
+                prepStatement.addBatch()
             }
             prepStatement.executeBatch()
         }
@@ -373,16 +510,16 @@ class SyncProcessor(private val mode: OperationMode) {
 
     @Throws(SQLException::class)
     private fun populateDuplicatesTable(
-        connection: Connection, 
-        matchedInfo: List<MerchantLocationMerger.MatchInfo>?, 
-        ctxData: List<MerchantData>, 
+        connection: Connection,
+        matchedInfo: List<MerchantLocationMerger.MatchInfo>?,
+        ctxData: List<MerchantData>,
         piggyCardsData: List<MerchantData>
     ) {
         if (matchedInfo == null) {
             logger.debug("No match info available, skipping duplicates table population")
             return
         }
-        
+
         val insertSQL = """
             INSERT INTO duplicates (
                 CTX_merchantId, CTX_name, CTX_address1, CTX_address2, CTX_address3, CTX_address4,
@@ -398,7 +535,7 @@ class SyncProcessor(private val mode: OperationMode) {
             for (match in matchedInfo) {
                 val ctxMerchant = ctxData[match.ctxIndex]
                 val piggyMerchant = piggyCardsData[match.piggyIndex]
-                
+
                 // CTX data
                 prepStatement.setString(1, ctxMerchant.merchantId)
                 prepStatement.setString(2, ctxMerchant.name)
@@ -414,7 +551,7 @@ class SyncProcessor(private val mode: OperationMode) {
                 prepStatement.setString(12, ctxMerchant.city)
                 prepStatement.setString(13, ctxMerchant.source)
                 prepStatement.setString(14, ctxMerchant.sourceId)
-                
+
                 // PiggyCards data
                 prepStatement.setString(15, piggyMerchant.merchantId)
                 prepStatement.setString(16, piggyMerchant.name)
@@ -428,7 +565,7 @@ class SyncProcessor(private val mode: OperationMode) {
                 prepStatement.setString(24, piggyMerchant.city)
                 prepStatement.setString(25, piggyMerchant.source)
                 prepStatement.setString(26, piggyMerchant.sourceId)
-                
+
                 prepStatement.addBatch()
             }
             prepStatement.executeBatch()

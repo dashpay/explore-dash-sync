@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import org.dash.mobile.explore.sync.DataSourceReport
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -18,6 +19,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
 
 private const val PROD_BASE_URL = "https://api.piggy.cards/dash/v1/"
 private const val DEV_BASE_URL = "https://apidev.piggy.cards/dash/v1/"
@@ -31,6 +33,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
     private lateinit var password: String
     private var token: String = ""
     override val logger = LoggerFactory.getLogger(PiggyCardsDataSource::class.java)!!
+    val merchantList = hashSetOf<String>()
+    var dataSourceReport: DataSourceReport? = null
 
     interface Endpoint {
         data class Brand(
@@ -58,7 +62,13 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             val fee: Int,
             val quantity: Int,
             @SerializedName("brand_id") val brandId: Int
-        )
+        ) {
+            val isFixed = priceType == "Fixed"
+
+            fun toShortString(): String {
+                return "GiftCard(id=$id, name=$name, priceType=$priceType, currency=$currency, discount=$discountPercentage, min=$minDenomination, max=$maxDenomination, denom=$denomination, fee=$fee, brand=$brandId)"
+            }
+        }
 
         data class Location(
             val name: String,
@@ -163,21 +173,44 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         logger.notice("Importing data from PiggyCards ($BASE_URL)")
 
-        var counter = 0
+        var locationCount = 0
+        val invalidLocations = linkedMapOf<String, Endpoint.Location>()
 
         try {
             val brands = apiService.getBrands(country)
+            logger.info("PiggyCard Merchants: ${brands.size}")
             brands.forEach { brand ->
                 logger.info("brand: $brand")
+                merchantList.add(brand.name)
                 val giftcardsResponse = apiService.getGiftCards(country, brand.id)
 
                 if (giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
+                    var discountPercentage = 0.0
+                    val immediateDeliveryCards = arrayListOf<Endpoint.Giftcard>()
+                    giftcardsResponse.data?.forEach { giftcard ->
+                        val info = if (giftcard.priceType == "Fixed") {
+                            giftcard.denomination
+                        } else {
+                            "(${giftcard.minDenomination}, ${giftcard.maxDenomination})"
+                        }
+                        logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}[$info ${giftcard.currency}], discount=${giftcard.discountPercentage}, inv=${giftcard.quantity}")
+                        discountPercentage = max(discountPercentage, giftcard.discountPercentage)
+                        if (giftcard.name.lowercase().contains("(instant delivery)")) {
+                            immediateDeliveryCards.add(giftcard)
+                        }
+                    }
+                    
+                    // if immediate delivery cards are available, then they get priority
+                    if (immediateDeliveryCards.isNotEmpty()) {
+                        discountPercentage = immediateDeliveryCards.first().discountPercentage
+                    }
 
-                    val giftcard = giftcardsResponse.data?.firstOrNull()
+                    // choose the first non-fixed card if available, otherwise the first card
+                    val giftcard = giftcardsResponse.data?.first { !it.isFixed }
+                        ?: giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
                     if (giftcard != null) {
-                        logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
-                        counter++
+                        // logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
                         val merchantData = convert(brand, giftcard)
 
                         if (merchantData.name.isNullOrEmpty()) {
@@ -201,9 +234,12 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                     )
                                     emit(merchantWithLocation)
                                     locationsAdded++
+                                    locationCount++
+                                } else {
+                                    invalidLocations[location.name] = location
                                 }
                             }
-                            if (locations.size > 0) {
+                            if (locations.isNotEmpty()) {
                                 logger.info("{} locations {} of {}", brand.name, locationsAdded, locations.size)
                             }
                         }
@@ -214,6 +250,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                     logger.error("PiggyCards API error: ${giftcardsResponse.code} - ${giftcardsResponse.message}")
                 }
             }
+            dataSourceReport = DataSourceReport(
+                "PiggyCards",
+                brands.size,
+                locationCount
+            )
         } catch (ex: IOException) {
             logger.error(ex.message, ex)
         } catch (ex: HttpException) {
@@ -222,9 +263,10 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         } catch (ex: NullPointerException) {
             logger.error(ex.message, ex)
         }
+        logger.info("PiggyCards - imported $locationCount records (invalid ${ 
+            invalidLocations.map { it.value.name }.joinToString(", ") 
+        })")
 
-        logger.notice("PiggyCards - imported $counter records (inactive $inactive, invalid $invalid)")
-        slackMessenger.postSlackMessage("PiggyCards $counter records")
     }
 
     private fun createAddress(location: Endpoint.Location): String {
@@ -284,5 +326,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         val isLongitudeEmpty = location.longitude == null || location.longitude == 0.0
 
         return !isAddress1Empty || !isLatitudeEmpty || !isLongitudeEmpty
+    }
+
+    fun getReport(): DataSourceReport {
+        return dataSourceReport ?: throw IllegalStateException("Report not yet generated. Call getRawData() first.")
     }
 }

@@ -34,7 +34,7 @@ object MerchantNameNormalizer {
         else -> {
             name
         }
-    }.replace('’', '\'')
+    }.replace('’', '\'').trim()
 
     fun getNormalizedName(name: String?): String? {
         return if (name != null) {
