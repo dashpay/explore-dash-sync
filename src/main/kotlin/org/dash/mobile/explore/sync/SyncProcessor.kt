@@ -332,6 +332,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 locationsDbConnection.close()
             }
         }
+        slackMessenger.postSlackMessage(report.toString(), logger)
     }
 
 
