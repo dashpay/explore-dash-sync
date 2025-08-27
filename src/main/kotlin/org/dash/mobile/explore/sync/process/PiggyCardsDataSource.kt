@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.DataSourceReport
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
@@ -145,6 +146,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             .writeTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
+            .also { client ->
+                val logging = HttpLoggingInterceptor { message -> println(message) }
+                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                client.addInterceptor(logging)
+            }
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
