@@ -31,14 +31,21 @@ object MerchantNameNormalizer {
         name.endsWith("®") -> {
             name.removeSuffix("®")
         }
+        name.endsWith("(Same Day Delivery)") -> {
+            name.removeSuffix("(Same Day Delivery)")
+        }
         else -> {
             name
         }
     }.replace('’', '\'').trim()
 
+    fun replaceHtmlEscapeSequences(name: String): String {
+        return name.replace("&amp;", "&")
+    }
+
     fun getNormalizedName(name: String?): String? {
         return if (name != null) {
-            val name = removeSuffix(name)
+            val name = replaceHtmlEscapeSequences(removeSuffix(name))
             names[getKey(name)] ?: name
         } else {
             null
