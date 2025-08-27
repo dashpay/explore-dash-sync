@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.DataSourceReport
+import org.dash.mobile.explore.sync.OperationMode
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -28,7 +29,7 @@ private const val BASE_URL = DEV_BASE_URL
 /**
  * Import data from PiggyCards API
  */
-class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
+class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode) :
     DataSource<MerchantData>(slackMessenger) {
     private lateinit var userId: String
     private lateinit var password: String
@@ -152,9 +153,13 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                 client.addInterceptor(logging)
             }
             .build()
-
+        val baseUrl = if (mode == OperationMode.TESTNET) {
+            DEV_BASE_URL
+        } else {
+            PROD_BASE_URL
+        }
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(baseUrl)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
@@ -163,8 +168,13 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         runBlocking {
             val properties = getProperties()
-            userId = properties.getProperty("PIGGY_CARDS_USER_ID")
-            password = properties.getProperty("PIGGY_CARDS_PASSWORD")
+            if (mode == OperationMode.TESTNET) {
+                userId = properties.getProperty("PIGGY_CARDS_USER_ID")
+                password = properties.getProperty("PIGGY_CARDS_PASSWORD")
+            } else if (mode == OperationMode.PRODUCTION) {
+                userId = properties.getProperty("PIGGY_CARDS_USER_ID_PROD")
+                password = properties.getProperty("PIGGY_CARDS_PASSWORD_PROD")
+            }
             val loginResponse = apiService.login(Endpoint.LoginRequest(userId, password))
             token = loginResponse.accessToken
         }
@@ -223,9 +233,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                             invalid++
                         } else {
                             val locations = apiService.getMerchantLocations(brand.id)
-                            if (locations.isEmpty()) {
-                                emit(merchantData.copy(type = "online"))
-                            }
+                            // add the online entry
+                            emit(merchantData.copy(type = "online"))
+
                             var locationsAdded = 0
                             locations.forEach { location ->
                                 // logger.info("      location: $location")
