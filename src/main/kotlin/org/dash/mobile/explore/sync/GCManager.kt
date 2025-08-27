@@ -104,6 +104,7 @@ class GCManager(private val mode: OperationMode) {
         logger.info(".lock file deleted")
     }
 
+    /** get the most recent locations DB from the cloud, but not one that was made today */
     @Throws(IOException::class)
     fun downloadMostRecentLocationsDb(targetDirectory: File = File(".")): File? {
         logger.info("Searching for most recent locations database on GCS")
@@ -122,15 +123,26 @@ class GCManager(private val mode: OperationMode) {
             return null
         }
         
-        val mostRecentBlob = locationsBlobs.maxByOrNull { blob ->
-            val dateStr = blob.name.substringAfter("locations-$mode-").substringBefore(".db")
-            try {
-                LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
-            } catch (e: Exception) {
-                logger.warn("Unable to parse date from filename: ${blob.name}", e)
-                LocalDate.MIN
+        val mostRecentBlob = locationsBlobs
+            .filter { blob ->
+                val dateStr = blob.name.substringAfter("locations-$mode-").substringBefore(".db")
+                try {
+                    val date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
+                    date != LocalDate.now()
+                } catch (e: Exception) {
+                    logger.warn("Unable to parse date from filename: ${blob.name}", e)
+                    false
+                }
             }
-        }
+            .maxByOrNull { blob ->
+                val dateStr = blob.name.substringAfter("locations-$mode-").substringBefore(".db")
+                try {
+                    LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
+                } catch (e: Exception) {
+                    logger.warn("Unable to parse date from filename: ${blob.name}", e)
+                    LocalDate.MIN
+                }
+            }
         
         if (mostRecentBlob == null) {
             logger.warn("Unable to determine most recent locations database")
