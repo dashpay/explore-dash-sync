@@ -246,6 +246,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                                         territory = fixStateName(location.state),
                                         latitude = location.latitude,
                                         longitude = location.longitude,
+                                        website = location.website,
                                         type = "physical"
                                     )
                                     emit(merchantWithLocation)
