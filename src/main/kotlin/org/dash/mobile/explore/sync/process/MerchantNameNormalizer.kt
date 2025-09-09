@@ -8,8 +8,16 @@ object MerchantNameNormalizer {
     private val names = hashMapOf<String, String>()
     private val logos = hashMapOf<String, String>()
     private val merchantIds = hashMapOf<String, String>()
+    private val manualNames = hashMapOf(
+        "Domino\'s Pizza" to "Domino's"
+    )
 
-    private fun getKey(name: String) = name.lowercase()
+
+    /** The key for a name is lower case with no ' */
+    private fun getKey(merchantName: String): String {
+        val name = manualNames[merchantName] ?: merchantName
+        return name.lowercase().replace("\'", "")
+    }
 
     private fun generateDeterministicUUID(name: String): UUID {
         // Use SHA-256 to create a deterministic hash of the name
