@@ -24,8 +24,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 private const val PROD_BASE_URL = "https://api.piggy.cards/dash/v1/"
-private const val DEV_BASE_URL = "https://apidev.piggy.cards/dash/v1/"
-private const val BASE_URL = DEV_BASE_URL
+private const val BASE_URL = PROD_BASE_URL
 /**
  * Import data from PiggyCards API
  */
@@ -153,13 +152,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                 client.addInterceptor(logging)
             }
             .build()
-        val baseUrl = if (mode == OperationMode.TESTNET) {
-            DEV_BASE_URL
-        } else {
-            PROD_BASE_URL
-        }
+
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(PROD_BASE_URL)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
@@ -168,13 +163,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
         runBlocking {
             val properties = getProperties()
-            if (mode == OperationMode.TESTNET) {
-                userId = properties.getProperty("PIGGY_CARDS_USER_ID")
-                password = properties.getProperty("PIGGY_CARDS_PASSWORD")
-            } else if (mode == OperationMode.PRODUCTION) {
-                userId = properties.getProperty("PIGGY_CARDS_USER_ID_PROD")
-                password = properties.getProperty("PIGGY_CARDS_PASSWORD_PROD")
-            }
+            userId = properties.getProperty("PIGGY_CARDS_USER_ID_PROD")
+            password = properties.getProperty("PIGGY_CARDS_PASSWORD_PROD")
+
             val loginResponse = apiService.login(Endpoint.LoginRequest(userId, password))
             token = loginResponse.accessToken
         }
