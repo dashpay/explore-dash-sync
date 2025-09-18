@@ -30,6 +30,9 @@ private const val BASE_URL = PROD_BASE_URL
  */
 class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode) :
     DataSource<MerchantData>(slackMessenger) {
+        companion object {
+            const val SERVICE_FEE = 150 // 1.5% for CurPay
+        }
     private lateinit var userId: String
     private lateinit var password: String
     private var token: String = ""
@@ -311,7 +314,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             type = "online"
             redeemType = "barcode"
             // these fields may not be correct, just based on a single card
-            savingsPercentage = (giftcard.discountPercentage * 100).toInt()
+            savingsPercentage = (giftcard.discountPercentage * 100).toInt() - SERVICE_FEE
             denominationsType = if (giftcard.priceType == "Range") {
                 "min-max"
             } else {
