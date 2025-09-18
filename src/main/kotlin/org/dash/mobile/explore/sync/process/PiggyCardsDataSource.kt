@@ -185,6 +185,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
         var locationCount = 0
         val invalidLocations = linkedMapOf<String, Endpoint.Location>()
+        val negativeDiscountBrands = arrayListOf<MerchantData>()
 
         try {
             val brands = apiService.getBrands(country)
@@ -217,14 +218,20 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                     }
 
                     // choose the first non-fixed card if available, otherwise the first card
-                    val giftcard = giftcardsResponse.data?.first { !it.isFixed }
-                        ?: giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                    val firstRangeCard = giftcardsResponse.data?.first { !it.isFixed }
+                    val giftcard = when {
+                        immediateDeliveryCards.isNotEmpty() -> immediateDeliveryCards.first()
+                        firstRangeCard != null -> firstRangeCard
+                        else -> giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                    }
                     if (giftcard != null) {
-                        // logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
                         val merchantData = convert(brand, giftcard)
 
                         if (merchantData.name.isNullOrEmpty()) {
                             invalid++
+                        } else if ((merchantData.savingsPercentage ?: 0) < 0) {
+                            invalid++
+                            negativeDiscountBrands.add(merchantData)
                         } else {
                             val locations = apiService.getMerchantLocations(brand.id)
                             // add the online entry
@@ -264,7 +271,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             dataSourceReport = DataSourceReport(
                 "PiggyCards",
                 brands.size,
-                locationCount
+                locationCount,
+                negativeDiscountBrands.map { it.name ?: "unknown" }
             )
         } catch (ex: IOException) {
             logger.error(ex.message, ex)
@@ -277,7 +285,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
         logger.info("PiggyCards - imported $locationCount records (invalid ${ 
             invalidLocations.map { it.value.name }.joinToString(", ") 
         })")
-
     }
 
     private fun createAddress(location: Endpoint.Location): String {
