@@ -36,6 +36,12 @@ object MerchantNameNormalizer {
         name.lowercase().endsWith(" usd") -> {
             name.substring(0, name.length - 4)
         }
+        name.lowercase().endsWith(" usa") -> {
+            name.substring(0, name.length - 4)
+        }
+        name.lowercase().endsWith(" us") -> {
+            name.substring(0, name.length - 3)
+        }
         name.endsWith("®") -> {
             name.removeSuffix("®")
         }

@@ -151,7 +151,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.level = HttpLoggingInterceptor.Level.BODY
                 client.addInterceptor(logging)
             }
             .build()
@@ -240,7 +240,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
                             var locationsAdded = 0
                             locations.forEach { location ->
-                                // logger.info("      location: $location")
                                 if (isValidLocation("physical", location)) {
                                     val merchantWithLocation = merchantData.copy(
                                         address1 = createAddress(location),
@@ -305,7 +304,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             paymentMethod = "gift card"
             merchantId = brand.id
             active = true
-            name = brand.name
+            name = MerchantNameNormalizer.removeSuffix(brand.name)
             address1 = "online"
             address2 = null
             address3 = null
