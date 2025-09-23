@@ -211,18 +211,19 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                             immediateDeliveryCards.add(giftcard)
                         }
                     }
-                    
-                    // if immediate delivery cards are available, then they get priority
-                    if (immediateDeliveryCards.isNotEmpty()) {
-                        discountPercentage = immediateDeliveryCards.first().discountPercentage
-                    }
 
                     // choose the first non-fixed card if available, otherwise the first card
                     val firstRangeCard = giftcardsResponse.data?.first { !it.isFixed }
                     val giftcard = when {
-                        immediateDeliveryCards.isNotEmpty() -> immediateDeliveryCards.first()
+                        immediateDeliveryCards.isNotEmpty() -> {
+                            discountPercentage = immediateDeliveryCards.maxOf { it.discountPercentage }
+                            immediateDeliveryCards.first().copy(discountPercentage = discountPercentage)
+                        }
                         firstRangeCard != null -> firstRangeCard
-                        else -> giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                        else -> {
+                            discountPercentage = giftcardsResponse.data?.maxOf { it.discountPercentage } ?: 0.0
+                            giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                        }
                     }
                     if (giftcard != null) {
                         val merchantData = convert(brand, giftcard)
