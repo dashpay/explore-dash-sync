@@ -50,7 +50,6 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
         suspend fun getAllMerchants(
             @Header("X-Api-Key") apiKey: String,
             @Header("X-Api-Secret") appKey: String,
-            // TODO: pagination not tested
             @Query("perPage") perPage: Int = 20,
             @Query("page") page: Int = 1
         ): MerchantsResponse
@@ -75,7 +74,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
             .readTimeout(30, TimeUnit.SECONDS)
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.level = HttpLoggingInterceptor.Level.BODY
                 client.addInterceptor(logging)
             }
             .build()

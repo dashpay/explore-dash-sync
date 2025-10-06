@@ -8,7 +8,9 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.DataSourceReport
+import org.dash.mobile.explore.sync.OperationMode
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -22,13 +24,15 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 private const val PROD_BASE_URL = "https://api.piggy.cards/dash/v1/"
-private const val DEV_BASE_URL = "https://apidev.piggy.cards/dash/v1/"
-private const val BASE_URL = DEV_BASE_URL
+private const val BASE_URL = PROD_BASE_URL
 /**
  * Import data from PiggyCards API
  */
-class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
+class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode) :
     DataSource<MerchantData>(slackMessenger) {
+        companion object {
+            const val SERVICE_FEE = 150 // 1.5% for CurPay
+        }
     private lateinit var userId: String
     private lateinit var password: String
     private var token: String = ""
@@ -145,10 +149,15 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             .writeTimeout(20, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
+            .also { client ->
+                val logging = HttpLoggingInterceptor { message -> println(message) }
+                logging.level = HttpLoggingInterceptor.Level.BODY
+                client.addInterceptor(logging)
+            }
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(PROD_BASE_URL)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
@@ -157,8 +166,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         runBlocking {
             val properties = getProperties()
-            userId = properties.getProperty("PIGGY_CARDS_USER_ID")
-            password = properties.getProperty("PIGGY_CARDS_PASSWORD")
+            userId = properties.getProperty("PIGGY_CARDS_USER_ID_PROD")
+            password = properties.getProperty("PIGGY_CARDS_PASSWORD_PROD")
+
             val loginResponse = apiService.login(Endpoint.LoginRequest(userId, password))
             token = loginResponse.accessToken
         }
@@ -175,6 +185,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
 
         var locationCount = 0
         val invalidLocations = linkedMapOf<String, Endpoint.Location>()
+        val negativeDiscountBrands = arrayListOf<MerchantData>()
 
         try {
             val brands = apiService.getBrands(country)
@@ -200,29 +211,35 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                             immediateDeliveryCards.add(giftcard)
                         }
                     }
-                    
-                    // if immediate delivery cards are available, then they get priority
-                    if (immediateDeliveryCards.isNotEmpty()) {
-                        discountPercentage = immediateDeliveryCards.first().discountPercentage
-                    }
 
                     // choose the first non-fixed card if available, otherwise the first card
-                    val giftcard = giftcardsResponse.data?.first { !it.isFixed }
-                        ?: giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                    val firstRangeCard = giftcardsResponse.data?.first { !it.isFixed }
+                    val giftcard = when {
+                        immediateDeliveryCards.isNotEmpty() -> {
+                            discountPercentage = immediateDeliveryCards.maxOf { it.discountPercentage }
+                            immediateDeliveryCards.first().copy(discountPercentage = discountPercentage)
+                        }
+                        firstRangeCard != null -> firstRangeCard
+                        else -> {
+                            discountPercentage = giftcardsResponse.data?.maxOf { it.discountPercentage } ?: 0.0
+                            giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                        }
+                    }
                     if (giftcard != null) {
-                        // logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}")
                         val merchantData = convert(brand, giftcard)
 
                         if (merchantData.name.isNullOrEmpty()) {
                             invalid++
+                        } else if ((merchantData.savingsPercentage ?: 0) < 0) {
+                            invalid++
+                            negativeDiscountBrands.add(merchantData)
                         } else {
                             val locations = apiService.getMerchantLocations(brand.id)
-                            if (locations.isEmpty()) {
-                                emit(merchantData.copy(type = "online"))
-                            }
+                            // add the online entry
+                            emit(merchantData.copy(type = "online"))
+
                             var locationsAdded = 0
                             locations.forEach { location ->
-                                // logger.info("      location: $location")
                                 if (isValidLocation("physical", location)) {
                                     val merchantWithLocation = merchantData.copy(
                                         address1 = createAddress(location),
@@ -230,6 +247,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
                                         territory = fixStateName(location.state),
                                         latitude = location.latitude,
                                         longitude = location.longitude,
+                                        website = location.website,
                                         type = "physical"
                                     )
                                     emit(merchantWithLocation)
@@ -253,7 +271,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             dataSourceReport = DataSourceReport(
                 "PiggyCards",
                 brands.size,
-                locationCount
+                locationCount,
+                negativeDiscountBrands.map { it.name ?: "unknown" }
             )
         } catch (ex: IOException) {
             logger.error(ex.message, ex)
@@ -266,7 +285,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
         logger.info("PiggyCards - imported $locationCount records (invalid ${ 
             invalidLocations.map { it.value.name }.joinToString(", ") 
         })")
-
     }
 
     private fun createAddress(location: Endpoint.Location): String {
@@ -286,7 +304,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             paymentMethod = "gift card"
             merchantId = brand.id
             active = true
-            name = brand.name
+            name = MerchantNameNormalizer.removeSuffix(brand.name)
             address1 = "online"
             address2 = null
             address3 = null
@@ -303,7 +321,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger) :
             type = "online"
             redeemType = "barcode"
             // these fields may not be correct, just based on a single card
-            savingsPercentage = (giftcard.discountPercentage * 100).toInt()
+            savingsPercentage = (giftcard.discountPercentage * 100).toInt() - SERVICE_FEE
             denominationsType = if (giftcard.priceType == "Range") {
                 "min-max"
             } else {

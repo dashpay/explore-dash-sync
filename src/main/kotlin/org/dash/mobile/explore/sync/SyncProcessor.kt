@@ -139,8 +139,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         val ctxDataSource = CTXSpendDataSource(slackMessenger)
         val ctxData = ctxDataSource.getDataList()
         val ctxReport = ctxDataSource.getReport()
-        saveMerchantDataToCsv(ctxData, "ctx.csv")
-        val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger)
+        val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
         var report = SyncReport(listOf(ctxReport, piggyCardsReport))
@@ -333,6 +332,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 locationsDbConnection.close()
             }
         }
+        slackMessenger.postSlackMessage(report.toString(), logger)
     }
 
 
