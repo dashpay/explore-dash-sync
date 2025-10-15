@@ -38,6 +38,12 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
     private var token: String = ""
     override val logger = LoggerFactory.getLogger(PiggyCardsDataSource::class.java)!!
     val merchantList = hashSetOf<String>()
+    val disabledList = arrayListOf<String>(
+        // no items
+    )
+    val disabledGiftcards = mapOf<Int, List<String>>(
+        174 to listOf("Xbox Live Gold", "Xbox Game Pass")
+    )
     var dataSourceReport: DataSourceReport? = null
 
     interface Endpoint {
@@ -60,14 +66,14 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             @SerializedName("price_type") val priceType: String,
             val currency: String,
             @SerializedName("discount_percentage") val discountPercentage: Double,
-            @SerializedName("min_denomination") val minDenomination: Int,
-            @SerializedName("max_denomination") val maxDenomination: Int,
+            @SerializedName("min_denomination") val minDenomination: Double,
+            @SerializedName("max_denomination") val maxDenomination: Double,
             val denomination: String,
             val fee: Int,
             val quantity: Int,
             @SerializedName("brand_id") val brandId: Int
         ) {
-            val isFixed = priceType == "Fixed"
+            val isFixed = priceType == "Fixed" || priceType == "Option"
 
             fun toShortString(): String {
                 return "GiftCard(id=$id, name=$name, priceType=$priceType, currency=$currency, discount=$discountPercentage, min=$minDenomination, max=$maxDenomination, denom=$denomination, fee=$fee, brand=$brandId)"
@@ -151,7 +157,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.BODY
+                logging.level = HttpLoggingInterceptor.Level.HEADERS
                 client.addInterceptor(logging)
             }
             .build()
@@ -193,40 +199,55 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             brands.forEach { brand ->
                 logger.info("brand: $brand")
                 merchantList.add(brand.name)
-                val giftcardsResponse = apiService.getGiftCards(country, brand.id)
+                val giftcardsResponse = try {
+                    apiService.getGiftCards(country, brand.id)
+                } catch (e: Exception) {
+                    logger.error("error obtaining giftcard information: ", e)
+                    null
+                }
 
-                if (giftcardsResponse.code == 200) {
+                if (giftcardsResponse != null && giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
                     var discountPercentage = 0.0
                     val immediateDeliveryCards = arrayListOf<Endpoint.Giftcard>()
-                    giftcardsResponse.data?.forEach { giftcard ->
-                        val info = if (giftcard.priceType == "Fixed") {
-                            giftcard.denomination
-                        } else {
-                            "(${giftcard.minDenomination}, ${giftcard.maxDenomination})"
+                    // remove disabled cards
+                    val disabledGiftCardsForMerchant = disabledGiftcards[brand.id.toInt()].orEmpty()
+                    val giftCards = if (disabledGiftCardsForMerchant.isEmpty()) {
+                        giftcardsResponse.data
+                    } else {
+                        giftcardsResponse.data?.filter { giftCard ->
+                            !disabledGiftCardsForMerchant.any { name -> giftCard.name.contains(name) }
                         }
-                        logger.info("    giftcard: ${giftcard.name}, type = ${giftcard.priceType}[$info ${giftcard.currency}], discount=${giftcard.discountPercentage}, inv=${giftcard.quantity}")
-                        discountPercentage = max(discountPercentage, giftcard.discountPercentage)
-                        if (giftcard.name.lowercase().contains("(instant delivery)")) {
-                            immediateDeliveryCards.add(giftcard)
+                    }
+
+                    giftCards?.forEach { giftCard ->
+                        val info = if (giftCard.priceType == "Fixed") {
+                            giftCard.denomination
+                        } else {
+                            "(${giftCard.minDenomination}, ${giftCard.maxDenomination})"
+                        }
+                        logger.info("    giftCard: ${giftCard.name}, type = ${giftCard.priceType}[$info ${giftCard.currency}], discount=${giftCard.discountPercentage}, inv=${giftCard.quantity}")
+                        discountPercentage = max(discountPercentage, giftCard.discountPercentage)
+                        if (giftCard.name.lowercase().contains("(instant delivery)")) {
+                            immediateDeliveryCards.add(giftCard)
                         }
                     }
 
                     // choose the first non-fixed card if available, otherwise the first card
-                    val firstRangeCard = giftcardsResponse.data?.first { !it.isFixed }
-                    val giftcard = when {
+                    val firstRangeCard = giftCards?.firstOrNull { !it.isFixed }
+                    val giftCard = when {
                         immediateDeliveryCards.isNotEmpty() -> {
                             discountPercentage = immediateDeliveryCards.maxOf { it.discountPercentage }
                             immediateDeliveryCards.first().copy(discountPercentage = discountPercentage)
                         }
                         firstRangeCard != null -> firstRangeCard
                         else -> {
-                            discountPercentage = giftcardsResponse.data?.maxOf { it.discountPercentage } ?: 0.0
-                            giftcardsResponse.data?.first()?.copy(discountPercentage = discountPercentage)
+                            discountPercentage = giftCards?.maxOf { it.discountPercentage } ?: 0.0
+                            giftCards?.first()?.copy(discountPercentage = discountPercentage)
                         }
                     }
-                    if (giftcard != null) {
-                        val merchantData = convert(brand, giftcard)
+                    if (giftCard != null) {
+                        val merchantData = convert(brand, giftCard)
 
                         if (merchantData.name.isNullOrEmpty()) {
                             invalid++
@@ -265,13 +286,14 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                         logger.info("there is a problem with $giftcardsResponse for ")
                     }
                 } else {
-                    logger.error("PiggyCards API error: ${giftcardsResponse.code} - ${giftcardsResponse.message}")
+                    logger.error("PiggyCards API error: ${giftcardsResponse?.code} - ${giftcardsResponse?.message}")
                 }
             }
             dataSourceReport = DataSourceReport(
                 "PiggyCards",
                 brands.size,
                 locationCount,
+                disabledList,
                 negativeDiscountBrands.map { it.name ?: "unknown" }
             )
         } catch (ex: IOException) {

@@ -36,6 +36,9 @@ class SyncReport(
             if (dataSource.removedMerchants.isNotEmpty()) {
                 sb.appendLine("      • ❌ *Removed Merchants:* ${dataSource.removedMerchants.size} ${dataSource.removedMerchants}")
             }
+            if (dataSource.negativeDiscounts.isNotEmpty()) {
+                sb.appendLine("      • ❌ *Negative Discount Merchants:* ${dataSource.negativeDiscounts.size} ${dataSource.negativeDiscounts}")
+            }
         }
         
         return sb.toString()
@@ -48,5 +51,6 @@ data class DataSourceReport(
     val locations: Int,
     val disabledMerchants: List<String> = listOf(),
     val newMerchants: List<String> = listOf(),
-    val removedMerchants: List<String> = listOf()
+    val removedMerchants: List<String> = listOf(),
+    val negativeDiscounts: List<String> = listOf()
 )

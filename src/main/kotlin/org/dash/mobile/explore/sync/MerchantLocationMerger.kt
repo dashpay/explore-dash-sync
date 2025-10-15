@@ -663,8 +663,8 @@ class MerchantLocationMerger(private val debug: Boolean) {
     private fun advancedNameSimilarity(name1: String?, name2: String?): Double {
         if (name1.isNullOrBlank() || name2.isNullOrBlank()) return 0.0
         
-        val normalized1 = MerchantNameNormalizer.removeSuffix(name1).lowercase()
-        val normalized2 = MerchantNameNormalizer.removeSuffix(name2).lowercase()
+        val normalized1 = MerchantNameNormalizer.normalizeName(name1).lowercase()
+        val normalized2 = MerchantNameNormalizer.normalizeName(name2).lowercase()
         
         return calculateSimilarity(normalized1, normalized2)
     }

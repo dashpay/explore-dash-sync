@@ -14,6 +14,7 @@ import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinAtmRadarDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
 import org.dash.mobile.explore.sync.process.CTXSpendDataSource
+import org.dash.mobile.explore.sync.process.MerchantNameNormalizer
 import org.dash.mobile.explore.sync.process.PiggyCardsDataSource
 import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
@@ -142,7 +143,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
-        var report = SyncReport(listOf(ctxReport, piggyCardsReport))
+        val report = SyncReport(listOf(ctxReport, piggyCardsReport))
         if (debug) {
             saveMerchantDataToCsv(ctxData, "ctx.csv")
             saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
@@ -300,7 +301,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
 
                 val currentPiggyCardsMerchants = piggyCardsDataSource.merchantList.toList()
                 val (newPC, removedPC) = findListDifferences(previousPiggyCardsMerchants, currentPiggyCardsMerchants) {
-                    it
+                    MerchantNameNormalizer.normalizeName(it)
                 }
                 logger.info("PiggyCards New merchants: $newPC")
                 logger.info("PiggyCards Removed merchants: $removedPC")
