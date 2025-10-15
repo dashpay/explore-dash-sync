@@ -71,7 +71,7 @@ from https://console.cloud.google.com/functions/list?authuser=0&project=dash-wal
 
 #### Trigger function
 
-Function can be triggered by publishing `explore-dash-sync-trigger-3` PubSub topic
+Function can be triggered by publishing `explore-dash-sync-trigger-4` PubSub topic
 
 ```
 gcloud pubsub topics publish explore-dash-sync-trigger-4
