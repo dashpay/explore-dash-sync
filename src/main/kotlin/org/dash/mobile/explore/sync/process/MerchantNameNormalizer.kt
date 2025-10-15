@@ -39,6 +39,9 @@ object MerchantNameNormalizer {
         name.lowercase().endsWith(" usa") -> {
             name.substring(0, name.length - 4)
         }
+        name.lowercase().endsWith("-usa") -> {
+            name.substring(0, name.length - 4)
+        }
         name.lowercase().endsWith(" us") -> {
             name.substring(0, name.length - 3)
         }
@@ -53,13 +56,15 @@ object MerchantNameNormalizer {
         }
     }.replace('’', '\'').trim()
 
+    fun normalizeName(name: String) = replaceHtmlEscapeSequences(removeSuffix(name))
+
     fun replaceHtmlEscapeSequences(name: String): String {
         return name.replace("&amp;", "&")
     }
 
     fun getNormalizedName(name: String?): String? {
         return if (name != null) {
-            val name = replaceHtmlEscapeSequences(removeSuffix(name))
+            val name = normalizeName(name)
             names[getKey(name)] ?: name
         } else {
             null
@@ -68,7 +73,7 @@ object MerchantNameNormalizer {
 
     fun add(name: String?, logo: String?, merchantId: String?) {
         name?.let {
-            val name = removeSuffix(name)
+            val name = normalizeName(name)
             val key = getKey(name)
             if (!names.containsKey(key)) {
                 names.put(key, name)
@@ -87,14 +92,14 @@ object MerchantNameNormalizer {
     }
     fun getLogo(name: String?): String? {
         return name?.let {
-            val name = removeSuffix(name)
+            val name = normalizeName(name)
             val key = getKey(name)
             logos[key]
         }
     }
 
     fun getUniqueId(name: String): String {
-        val normalizedName = removeSuffix(name)
+        val normalizedName = normalizeName(name)
         val key = getKey(normalizedName)
         val uuid = merchantIds[key]
         return if (uuid != null) {
