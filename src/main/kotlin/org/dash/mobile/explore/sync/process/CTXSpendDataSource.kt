@@ -74,7 +74,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
             .readTimeout(30, TimeUnit.SECONDS)
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.BODY
+                logging.level = HttpLoggingInterceptor.Level.HEADERS
                 client.addInterceptor(logging)
             }
             .build()
