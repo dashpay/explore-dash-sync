@@ -75,6 +75,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
                 logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.redactHeader("Authorization")
                 client.addInterceptor(logging)
             }
             .build()

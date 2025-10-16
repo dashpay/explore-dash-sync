@@ -158,6 +158,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
                 logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.redactHeader("Authorization")
                 client.addInterceptor(logging)
             }
             .build()
@@ -361,9 +362,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             return true
         }
 
-        val isAddress1Empty = location.street.isNullOrEmpty() || location.streetNumber.isNullOrEmpty()
-        val isLatitudeEmpty = location.latitude == null || location.latitude == 0.0
-        val isLongitudeEmpty = location.longitude == null || location.longitude == 0.0
+        val isAddress1Empty = location.street.isEmpty() || location.streetNumber.isEmpty()
+        val isLatitudeEmpty = location.latitude == 0.0
+        val isLongitudeEmpty = location.longitude == 0.0
 
         return !isAddress1Empty || !isLatitudeEmpty || !isLongitudeEmpty
     }

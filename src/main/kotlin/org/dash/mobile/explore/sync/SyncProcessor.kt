@@ -109,7 +109,8 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 // upload the zipped database
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
                 // copy and upload the uncompressed database
-                gcManager.uploadObject(locationsDbFile, timestamp, dbFileChecksum)
+                val locationsDbChecksum = calculateChecksum(locationsDbFile)
+                gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum, FileAccessLevel.AUTHENTICATED_USERS_ONLY)
             } else {
                 logger.notice("No changes were detected, updating canceled")
                 slackMessenger.postSlackMessage("No changes detected, updating canceled")
@@ -367,7 +368,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             dbFile.delete()
         }
         dbFile.createNewFile()
-        logger.debug("Creating locations DB ${dbFile.absolutePath}")
+        logger.info("Creating locations DB ${dbFile.absolutePath}")
         return dbFile
     }
 
@@ -405,7 +406,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 throw IllegalStateException("No data received")
             }
 
-            logger.debug("Table sync complete ($totalRecords records)")
+            logger.info("Table sync complete ($totalRecords records)")
         }.collect {
             prepStatement.addBatch()
             batchSize++
@@ -431,7 +432,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         connection.createStatement().use { statement ->
             statement.execute(createTableSQL)
         }
-        logger.debug("Created $tableName table")
+        logger.info("Created $tableName table")
     }
 
     @Throws(SQLException::class)
@@ -480,7 +481,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             }
             prepStatement.executeBatch()
         }
-        logger.debug("Populated locations table with ${data.size} records")
+        logger.info("Populated locations table with ${data.size} records")
     }
 
     @Throws(IOException::class)
@@ -517,7 +518,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         piggyCardsData: List<MerchantData>
     ) {
         if (matchedInfo == null) {
-            logger.debug("No match info available, skipping duplicates table population")
+            logger.info("No match info available, skipping duplicates table population")
             return
         }
 
@@ -571,6 +572,6 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             }
             prepStatement.executeBatch()
         }
-        logger.debug("Populated duplicates table with ${matchedInfo.size} records")
+        logger.info("Populated duplicates table with ${matchedInfo.size} records")
     }
 }
