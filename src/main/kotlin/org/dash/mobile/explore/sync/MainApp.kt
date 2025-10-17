@@ -29,6 +29,7 @@ fun main(args: Array<String>) {
                 println("Invalid argument $arg, use one of")
                 println("$UPLOAD_ARG - force upload data to GC Storage")
                 println("$QUIET_ARG - quiet mode: no notifications are pushed to Slack")
+                println("$PROD_ARG - production mode: use production data sources/destinations")
                 println("$DEBUG_ARG - output to CSV files for unit tests")
                 exitProcess(1)
             }

@@ -44,6 +44,7 @@ data class GiftCardProvider(
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {
         return statement.apply {
+            setNull(ID_COL, java.sql.Types.INTEGER)
             setString(MERCHANT_ID_COL, merchantId ?: "")
             setBoolean(ACTIVE_COL, active ?: false)
             setString(PROVIDER_COL, provider)

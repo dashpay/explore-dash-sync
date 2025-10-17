@@ -14,6 +14,7 @@ import net.lingala.zip4j.model.enums.EncryptionMethod
 import org.dash.mobile.explore.sync.process.CoinAtmRadarDataSource
 import org.dash.mobile.explore.sync.process.DCGDataSource
 import org.dash.mobile.explore.sync.process.CTXSpendDataSource
+import org.dash.mobile.explore.sync.process.MerchantNameNormalizer
 import org.dash.mobile.explore.sync.process.PiggyCardsDataSource
 import org.dash.mobile.explore.sync.process.data.AtmLocation
 import org.dash.mobile.explore.sync.process.data.Crc32c
@@ -108,7 +109,8 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 // upload the zipped database
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
                 // copy and upload the uncompressed database
-                gcManager.uploadObject(locationsDbFile, timestamp, dbFileChecksum)
+                val locationsDbChecksum = calculateChecksum(locationsDbFile)
+                gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
             } else {
                 logger.notice("No changes were detected, updating canceled")
                 slackMessenger.postSlackMessage("No changes detected, updating canceled")
@@ -142,7 +144,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
-        var report = SyncReport(listOf(ctxReport, piggyCardsReport))
+        val report = SyncReport(listOf(ctxReport, piggyCardsReport))
         if (debug) {
             saveMerchantDataToCsv(ctxData, "ctx.csv")
             saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
@@ -300,7 +302,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
 
                 val currentPiggyCardsMerchants = piggyCardsDataSource.merchantList.toList()
                 val (newPC, removedPC) = findListDifferences(previousPiggyCardsMerchants, currentPiggyCardsMerchants) {
-                    it
+                    MerchantNameNormalizer.normalizeName(it)
                 }
                 logger.info("PiggyCards New merchants: $newPC")
                 logger.info("PiggyCards Removed merchants: $removedPC")
@@ -366,7 +368,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             dbFile.delete()
         }
         dbFile.createNewFile()
-        logger.debug("Creating locations DB ${dbFile.absolutePath}")
+        logger.info("Creating locations DB ${dbFile.absolutePath}")
         return dbFile
     }
 
@@ -380,13 +382,15 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         }
     }
 
-    private fun <T> findListDifferences(previous: List<T>, current: List<T>, keySelector: (T) -> Any): Pair<List<T>, List<T>> {
+    private fun <T> findListDifferences(
+        previous: List<T>,
+        current: List<T>,
+        keySelector: (T) -> Any?
+    ): Pair<List<T>, List<T>> {
         val previousKeys = previous.associateBy(keySelector)
         val currentKeys = current.associateBy(keySelector)
-        
         val newItems = current.filter { keySelector(it) !in previousKeys }
         val removedItems = previous.filter { keySelector(it) !in currentKeys }
-        
         return Pair(newItems, removedItems)
     }
 
@@ -404,7 +408,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 throw IllegalStateException("No data received")
             }
 
-            logger.debug("Table sync complete ($totalRecords records)")
+            logger.info("Table sync complete ($totalRecords records)")
         }.collect {
             prepStatement.addBatch()
             batchSize++
@@ -430,7 +434,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         connection.createStatement().use { statement ->
             statement.execute(createTableSQL)
         }
-        logger.debug("Created $tableName table")
+        logger.info("Created $tableName table")
     }
 
     @Throws(SQLException::class)
@@ -479,7 +483,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             }
             prepStatement.executeBatch()
         }
-        logger.debug("Populated locations table with ${data.size} records")
+        logger.info("Populated locations table with ${data.size} records")
     }
 
     @Throws(IOException::class)
@@ -516,7 +520,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         piggyCardsData: List<MerchantData>
     ) {
         if (matchedInfo == null) {
-            logger.debug("No match info available, skipping duplicates table population")
+            logger.info("No match info available, skipping duplicates table population")
             return
         }
 
@@ -570,6 +574,6 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             }
             prepStatement.executeBatch()
         }
-        logger.debug("Populated duplicates table with ${matchedInfo.size} records")
+        logger.info("Populated duplicates table with ${matchedInfo.size} records")
     }
 }
