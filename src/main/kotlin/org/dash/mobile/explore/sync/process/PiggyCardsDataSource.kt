@@ -41,8 +41,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
     val disabledList = arrayListOf<String>(
         // no items
     )
-    val disabledGiftcards = mapOf<Int, List<String>>(
-        174 to listOf("Xbox Live Gold", "Xbox Game Pass")
+    val disabledGiftcards = mapOf(
+        "174" to listOf("Xbox Live", "Xbox Game Pass")
     )
     var dataSourceReport: DataSourceReport? = null
 
@@ -212,7 +212,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                     var discountPercentage = 0.0
                     val immediateDeliveryCards = arrayListOf<Endpoint.Giftcard>()
                     // remove disabled cards
-                    val disabledGiftCardsForMerchant = disabledGiftcards[brand.id.toInt()].orEmpty()
+                    val disabledGiftCardsForMerchant = disabledGiftcards[brand.id].orEmpty()
                     val giftCards = if (disabledGiftCardsForMerchant.isEmpty()) {
                         giftcardsResponse.data
                     } else {

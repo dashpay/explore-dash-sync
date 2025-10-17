@@ -1,1 +1,1 @@
-SELECT count(*) FROM locations where source = "PiggyCards";
+SELECT name, savingsPercentage FROM final where source = "PiggyCards" and address1 = "online" order by savingsPercentage;

@@ -110,7 +110,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
                 // copy and upload the uncompressed database
                 val locationsDbChecksum = calculateChecksum(locationsDbFile)
-                gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum, FileAccessLevel.AUTHENTICATED_USERS_ONLY)
+                gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
             } else {
                 logger.notice("No changes were detected, updating canceled")
                 slackMessenger.postSlackMessage("No changes detected, updating canceled")
@@ -382,13 +382,15 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         }
     }
 
-    private fun <T> findListDifferences(previous: List<T>, current: List<T>, keySelector: (T) -> Any): Pair<List<T>, List<T>> {
+    private fun <T> findListDifferences(
+        previous: List<T>,
+        current: List<T>,
+        keySelector: (T) -> Any?
+    ): Pair<List<T>, List<T>> {
         val previousKeys = previous.associateBy(keySelector)
         val currentKeys = current.associateBy(keySelector)
-        
         val newItems = current.filter { keySelector(it) !in previousKeys }
         val removedItems = previous.filter { keySelector(it) !in currentKeys }
-        
         return Pair(newItems, removedItems)
     }
 
