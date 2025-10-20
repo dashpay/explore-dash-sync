@@ -1,0 +1,1 @@
+SELECT count(*) FROM locations where source = "CTX";

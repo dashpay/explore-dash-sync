@@ -7,10 +7,12 @@ import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.Data
+import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.Logger
 import java.io.FileNotFoundException
@@ -38,6 +40,14 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data 
             data.transferInto(statement)
             emit(data)
         }
+
+    suspend fun getDataList(): List<T> {
+        val result = arrayListOf<T>()
+        getRawData().collect { item ->
+            result.add(item)
+        }
+        return result
+    }
 
     inline fun <reified T> convertJsonData(inKey: String, inData: JsonObject): T? {
         return try {

@@ -55,14 +55,14 @@ Base on [Deploying Cloud Functions](https://cloud.google.com/functions/docs/depl
 
 ```
 # create pubsub topic
-gcloud pubsub topics create explore-dash-sync-trigger-3
+gcloud pubsub topics create explore-dash-sync-trigger-4
 
 # deploy the function
-gcloud functions deploy explore-dash-sync-3 \
+gcloud functions deploy explore-dash-sync-4 \
  --runtime=java17 \
  --entry-point=org.dash.mobile.explore.sync.Function \
  --source=build/deploy \
- --trigger-topic explore-dash-sync-trigger-3 \
+ --trigger-topic explore-dash-sync-trigger-4 \
  --allow-unauthenticated --memory=1024MB --timeout=300s
 ``` 
 
@@ -71,16 +71,16 @@ from https://console.cloud.google.com/functions/list?authuser=0&project=dash-wal
 
 #### Trigger function
 
-Function can be triggered by publishing `explore-dash-sync-trigger-3` PubSub topic
+Function can be triggered by publishing `explore-dash-sync-trigger-4` PubSub topic
 
 ```
-gcloud pubsub topics publish explore-dash-sync-trigger-3
+gcloud pubsub topics publish explore-dash-sync-trigger-4
 ```
 
 Or for the testnet mode:
 
 ```
-gcloud pubsub topics publish explore-dash-sync-trigger-3 --attribute="mode=testnet"
+gcloud pubsub topics publish explore-dash-sync-trigger-4 --attribute="mode=testnet"
 ```
 
 ### Generating Protocol Buffer messages (`javalite`)
@@ -162,3 +162,10 @@ data class MerchantData(
     }
 }
 ```
+
+# Database Versions
+
+1. DCG Merchants and ATM's for DashPay (android) < 11.1.2 and Dash Wallet (iOS) < 8.3
+2. Beta version for DashSpend  for DashPay (android) = 11.2.1-2
+3. Production for DashSpend (CTX) for DashPay (android) >= 11.2.2 and Dash Wallet (iOS) >= 8.4 
+4. Production for DashSpend (CTX + PiggyCards)
