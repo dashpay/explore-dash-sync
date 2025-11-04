@@ -74,6 +74,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
                 logger.info("Number of columns ${headers.size}")
                 continue
             } else {
+                logger.info("$rowIndex $rowData")
                 val merchant = convert(rowData)
                 if (merchant != null) {
                     totalRecords++
