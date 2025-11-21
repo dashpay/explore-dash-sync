@@ -66,22 +66,52 @@ application {
     mainClass.set("org.dash.mobile.explore.sync.MainAppKt")
 }
 
+tasks.register<ShadowJar>("shadowJarFun") {
+    from(sourceSets.main.get().output)
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+    manifest.attributes.apply {
+        put("Implementation-Title", "Dash Explore Sync Function")
+        put("Implementation-Version", project.version)
+        put("Main-Class", "org.dash.mobile.explore.sync.Function")
+    }
+    archiveFileName.set("${project.name}-fun.jar")
+    archiveClassifier.set("fun")
+    archiveVersion.set("")
+}
+
+tasks.register<ShadowJar>("shadowJarApp") {
+    from(sourceSets.main.get().output)
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+    manifest.attributes.apply {
+        put("Implementation-Title", "Dash Explore Sync App")
+        put("Implementation-Version", project.version)
+        put("Main-Class", "org.dash.mobile.explore.sync.MainAppKt")
+    }
+    archiveFileName.set("${project.name}-app.jar")
+    archiveClassifier.set("app")
+    archiveVersion.set("")
+}
+
 tasks.register("buildFun") {
-    project.setProperty("mainClassName", "org.dash.mobile.explore.sync.Function")
-    dependsOn("build")
-    copy {
-        from("build/libs/$outputArchive")
-        into("build/deploy/")
-        rename { "${rootProject.name}-fun.jar" }
+    group = "build"
+    description = "Build Google Cloud Function JAR"
+    dependsOn("shadowJarFun")
+    doLast {
+        copy {
+            from("build/libs/${project.name}-fun.jar")
+            into("build/deploy/")
+        }
     }
 }
 
 tasks.register("buildApp") {
-    project.setProperty("mainClassName", "org.dash.mobile.explore.sync.MainAppKt")
-    dependsOn("build")
-    copy {
-        from("build/libs/$outputArchive")
-        into("build/deploy/")
-        rename { "${rootProject.name}-app.jar" }
+    group = "build"
+    description = "Build standalone application JAR"
+    dependsOn("shadowJarApp")
+    doLast {
+        copy {
+            from("build/libs/${project.name}-app.jar")
+            into("build/deploy/")
+        }
     }
 }
