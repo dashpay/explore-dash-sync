@@ -40,6 +40,7 @@ import java.util.zip.CheckedInputStream
 class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
+        const val BUILD = 4
     }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
@@ -55,7 +56,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
     @FlowPreview
     suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
-        slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ### - $mode", logger)
+        slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ($BUILD) ### - $mode", logger)
 
         try {
             val syncLock = gcManager.checkLock()
