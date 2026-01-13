@@ -232,6 +232,10 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                         if (giftCard.name.lowercase().contains("(instant delivery)")) {
                             immediateDeliveryCards.add(giftCard)
                         }
+                        if (immediateDeliveryCards.isNotEmpty()) {
+                            // add rest of fixed cards
+                            immediateDeliveryCards.addAll(giftCards.filter { it.priceType == "Fixed" && !it.name.contains("(instant delivery)")} )
+                        }
                     }
 
                     // choose the first non-fixed card if available, otherwise the first card
