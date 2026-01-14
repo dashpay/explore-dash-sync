@@ -27,8 +27,8 @@ private const val BASE_URL = "https://spend.ctx.com/"
 /**
  * Import data from CTXSpend API
  */
-class CTXSpendDataSource(slackMessenger: SlackMessenger) :
-    DataSource<MerchantData>(slackMessenger) {
+class CTXSpendDataSource(slackMessenger: SlackMessenger, debugMode: Boolean) :
+    DataSource<MerchantData>(slackMessenger, debugMode) {
     override val logger = LoggerFactory.getLogger(CTXSpendDataSource::class.java)!!
     val merchantList = hashSetOf<String>()
     var dataSourceReport: DataSourceReport? = null
@@ -74,7 +74,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger) :
             .readTimeout(30, TimeUnit.SECONDS)
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.level = loggingLevel
                 logging.redactHeader("Authorization")
                 client.addInterceptor(logging)
             }

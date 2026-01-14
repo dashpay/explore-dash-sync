@@ -28,8 +28,8 @@ private const val BASE_URL = PROD_BASE_URL
 /**
  * Import data from PiggyCards API
  */
-class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode) :
-    DataSource<MerchantData>(slackMessenger) {
+class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode, debugMode: Boolean) :
+    DataSource<MerchantData>(slackMessenger, debugMode) {
         companion object {
             const val SERVICE_FEE = 150 // 1.5% for CurPay
         }
@@ -157,7 +157,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.level = loggingLevel
                 logging.redactHeader("Authorization")
                 client.addInterceptor(logging)
             }
@@ -232,10 +232,10 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                         if (giftCard.name.lowercase().contains("(instant delivery)")) {
                             immediateDeliveryCards.add(giftCard)
                         }
-                        if (immediateDeliveryCards.isNotEmpty()) {
-                            // add rest of fixed cards
-                            immediateDeliveryCards.addAll(giftCards.filter { it.priceType == "Fixed" && !it.name.contains("(instant delivery)")} )
-                        }
+                    }
+                    if (giftCards != null && immediateDeliveryCards.isNotEmpty()) {
+                        // add rest of fixed cards
+                        immediateDeliveryCards.addAll(giftCards.filter { it.priceType == "Fixed" && !it.name.contains("(instant delivery)")} )
                     }
 
                     // choose the first non-fixed card if available, otherwise the first card

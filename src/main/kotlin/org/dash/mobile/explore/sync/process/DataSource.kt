@@ -7,12 +7,11 @@ import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.withContext
+import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.Data
-import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
 import org.slf4j.Logger
 import java.io.FileNotFoundException
@@ -20,9 +19,12 @@ import java.io.InputStreamReader
 import java.sql.PreparedStatement
 import java.util.Properties
 
-abstract class DataSource<T>(val slackMessenger: SlackMessenger) where T : Data {
+abstract class DataSource<T>(val slackMessenger: SlackMessenger, val debugMode: Boolean) where T : Data {
 
     private val usStatesAbbrMap: Map<String?, String?>
+    protected val loggingLevel = if (debugMode)
+        HttpLoggingInterceptor.Level.BODY
+    else HttpLoggingInterceptor.Level.HEADERS
 
     init {
         val gsonReader = Gson()

@@ -23,8 +23,8 @@ private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
 /**
  * Import data from Google Sheet: https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
-class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackMessenger) :
-    DataSource<MerchantData>(slackMessenger) {
+class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackMessenger, debugMode: Boolean) :
+    DataSource<MerchantData>(slackMessenger, debugMode) {
 
     override val logger = LoggerFactory.getLogger(DCGDataSource::class.java)!!
 
