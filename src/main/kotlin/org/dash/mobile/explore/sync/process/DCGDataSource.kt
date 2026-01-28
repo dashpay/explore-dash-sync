@@ -97,6 +97,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
         val headers = mutableListOf<String>()
 
         var totalRecords = 0
+        val merchantNames = hashSetOf<String>()
         for (rowIndex in values.indices) {
             val rowData = values[rowIndex]
             if (rowIndex == 0) {
@@ -115,6 +116,9 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
                 val merchant = convertFromValues(rowData)
                 if (merchant != null) {
                     totalRecords++
+                    merchant.name?.let {
+                        merchantNames.add(it)
+                    }
                     emit(merchant)
                 } else {
                     logger.info("Skipping empty row at index $rowIndex")
@@ -122,7 +126,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
                 }
             }
         }
-        slackMessenger.postSlackMessage("DCG Merchants $totalRecords records", logger)
+        slackMessenger.postSlackMessage("DCG Merchants $totalRecords location records (merchants: ${merchantNames.size})", logger)
     }
 
     private fun convertFromValues(rowData: List<Any>): MerchantData? {
