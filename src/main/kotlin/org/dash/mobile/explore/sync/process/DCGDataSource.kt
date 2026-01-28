@@ -117,7 +117,8 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
                     totalRecords++
                     emit(merchant)
                 } else {
-                    break
+                    logger.info("Skipping empty row at index $rowIndex")
+                    continue
                 }
             }
         }
