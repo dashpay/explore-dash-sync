@@ -80,6 +80,27 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             }
         }
 
+        /**
+         * Location
+         * {
+         *      "name":"Burger King",
+         *      "latitude":49.666313,
+         *      "longitude":-112.793823,
+         *      "street_number":"2416",
+         *      "street":"Fairway Plaza Rd S",
+         *      "country":"CA",
+         *      "city":"Lethbridge",
+         *      "state":"AB",
+         *      "zip":"Unknown",
+         *      "opening_hours":"Unknown",
+         *      "phone":"(403) 380-4771",
+         *      "shop":"Unknown",
+         *      "website":"Unknown",
+         *      "wheelchair":"Unknown"
+         * }
+         *
+         */
+
         data class Location(
             val name: String,
             val latitude: Double,
@@ -89,6 +110,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             val city: String,
             val state: String,
             val zip: String,
+            val country: String,
             @SerializedName("opening_hours") val openingHours: String,
             val phone: String,
             val shop: String,
@@ -266,7 +288,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
                             var locationsAdded = 0
                             locations.forEach { location ->
-                                if (isValidLocation("physical", location)) {
+                                if (isValidLocation("physical", location) && location.country == country) {
                                     val merchantWithLocation = merchantData.copy(
                                         address1 = createAddress(location),
                                         city = location.city,
