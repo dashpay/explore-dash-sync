@@ -40,7 +40,7 @@ import java.util.zip.CheckedInputStream
 class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
-        const val BUILD = 5
+        const val BUILD = 6
     }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
