@@ -28,8 +28,8 @@ private const val BASE_URL = PROD_BASE_URL
 /**
  * Import data from PiggyCards API
  */
-class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode) :
-    DataSource<MerchantData>(slackMessenger) {
+class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: OperationMode, debugMode: Boolean) :
+    DataSource<MerchantData>(slackMessenger, debugMode) {
         companion object {
             const val SERVICE_FEE = 150 // 1.5% for CurPay
         }
@@ -80,6 +80,27 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             }
         }
 
+        /**
+         * Location
+         * {
+         *      "name":"Burger King",
+         *      "latitude":49.666313,
+         *      "longitude":-112.793823,
+         *      "street_number":"2416",
+         *      "street":"Fairway Plaza Rd S",
+         *      "country":"CA",
+         *      "city":"Lethbridge",
+         *      "state":"AB",
+         *      "zip":"Unknown",
+         *      "opening_hours":"Unknown",
+         *      "phone":"(403) 380-4771",
+         *      "shop":"Unknown",
+         *      "website":"Unknown",
+         *      "wheelchair":"Unknown"
+         * }
+         *
+         */
+
         data class Location(
             val name: String,
             val latitude: Double,
@@ -89,6 +110,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             val city: String,
             val state: String,
             val zip: String,
+            val country: String,
             @SerializedName("opening_hours") val openingHours: String,
             val phone: String,
             val shop: String,
@@ -157,7 +179,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             .addInterceptor(PiggyCardsHeadersInterceptor() { token })
             .also { client ->
                 val logging = HttpLoggingInterceptor { message -> println(message) }
-                logging.level = HttpLoggingInterceptor.Level.HEADERS
+                logging.level = loggingLevel
                 logging.redactHeader("Authorization")
                 client.addInterceptor(logging)
             }
@@ -232,10 +254,10 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                         if (giftCard.name.lowercase().contains("(instant delivery)")) {
                             immediateDeliveryCards.add(giftCard)
                         }
-                        if (immediateDeliveryCards.isNotEmpty()) {
-                            // add rest of fixed cards
-                            immediateDeliveryCards.addAll(giftCards.filter { it.priceType == "Fixed" && !it.name.contains("(instant delivery)")} )
-                        }
+                    }
+                    if (giftCards != null && immediateDeliveryCards.isNotEmpty()) {
+                        // add rest of fixed cards
+                        immediateDeliveryCards.addAll(giftCards.filter { it.priceType == "Fixed" && !it.name.contains("(instant delivery)")} )
                     }
 
                     // choose the first non-fixed card if available, otherwise the first card
@@ -266,7 +288,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
                             var locationsAdded = 0
                             locations.forEach { location ->
-                                if (isValidLocation("physical", location)) {
+                                if (isValidLocation("physical", location) && location.country == country) {
                                     val merchantWithLocation = merchantData.copy(
                                         address1 = createAddress(location),
                                         city = location.city,

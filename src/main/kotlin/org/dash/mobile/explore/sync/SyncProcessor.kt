@@ -40,7 +40,7 @@ import java.util.zip.CheckedInputStream
 class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
-        const val BUILD = 5
+        const val BUILD = 6
     }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
@@ -139,10 +139,10 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
 
     @Throws(SQLException::class)
     private suspend fun importData(dbFile: File, locationsDbFile: File) {
-        val ctxDataSource = CTXSpendDataSource(slackMessenger)
+        val ctxDataSource = CTXSpendDataSource(slackMessenger, debug)
         val ctxData = ctxDataSource.getDataList()
         val ctxReport = ctxDataSource.getReport()
-        val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode)
+        val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode, debug)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
         val report = SyncReport(listOf(ctxReport, piggyCardsReport))
@@ -156,7 +156,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         val combinedMerchants = try {
             // merchant table
             var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
-            val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger).getData(prepStatement)
+            val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger, debug).getData(prepStatement)
             val merger = MerchantLocationMerger(debug)
             val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
             logger.info("Duplicate locations: ${combinedMerchants.matchInfo.size}")
@@ -187,7 +187,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
 
             // atm table
             prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
-            val coinAtmRadarDataFlow = CoinAtmRadarDataSource(slackMessenger).getData(prepStatement)
+            val coinAtmRadarDataFlow = CoinAtmRadarDataSource(slackMessenger, debug).getData(prepStatement)
             val atmDataFlow = flowOf(coinAtmRadarDataFlow).flattenConcat()
             syncData(atmDataFlow, prepStatement)
             combinedMerchants

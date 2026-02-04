@@ -23,8 +23,8 @@ private const val SPREADSHEET_ID = "1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
 /**
  * Import data from Google Sheet: https://docs.google.com/spreadsheets/d/1YU5UShf5ruTZKJxglP36h-87W02bsDY3L5MmpYjFCGA
  */
-class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackMessenger) :
-    DataSource<MerchantData>(slackMessenger) {
+class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackMessenger, debugMode: Boolean) :
+    DataSource<MerchantData>(slackMessenger, debugMode) {
 
     override val logger = LoggerFactory.getLogger(DCGDataSource::class.java)!!
 
@@ -97,6 +97,7 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
         val headers = mutableListOf<String>()
 
         var totalRecords = 0
+        val merchantNames = hashSetOf<String>()
         for (rowIndex in values.indices) {
             val rowData = values[rowIndex]
             if (rowIndex == 0) {
@@ -115,13 +116,17 @@ class DCGDataSource(private val useTestnetSheet: Boolean, slackMessenger: SlackM
                 val merchant = convertFromValues(rowData)
                 if (merchant != null) {
                     totalRecords++
+                    merchant.name?.let {
+                        merchantNames.add(it)
+                    }
                     emit(merchant)
                 } else {
-                    break
+                    logger.info("Skipping empty row at index $rowIndex")
+                    continue
                 }
             }
         }
-        slackMessenger.postSlackMessage("DCG Merchants $totalRecords records", logger)
+        slackMessenger.postSlackMessage("DCG Merchants $totalRecords location records (merchants: ${merchantNames.size})", logger)
     }
 
     private fun convertFromValues(rowData: List<Any>): MerchantData? {

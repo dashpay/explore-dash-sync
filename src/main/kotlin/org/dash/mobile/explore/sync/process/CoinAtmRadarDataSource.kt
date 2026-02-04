@@ -20,7 +20,7 @@ import java.security.MessageDigest
 /**
  * Import data from CoinAtmRadar API
  */
-class CoinAtmRadarDataSource(slackMessenger: SlackMessenger) : DataSource<AtmLocation>(slackMessenger) {
+class CoinAtmRadarDataSource(slackMessenger: SlackMessenger, debugMode: Boolean) : DataSource<AtmLocation>(slackMessenger, debugMode) {
     companion object {
         private const val BASE_URL = "https://coinatmradar.com/ext_api/"
     }
