@@ -268,10 +268,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                             immediateDeliveryCards.first().copy(discountPercentage = discountPercentage)
                         }
                         firstRangeCard != null -> firstRangeCard
-                        else -> {
-                            discountPercentage = giftCards?.maxOf { it.discountPercentage } ?: 0.0
-                            giftCards?.first()?.copy(discountPercentage = discountPercentage)
+                        !giftCards.isNullOrEmpty() -> {
+                            discountPercentage = giftCards.maxOf { it.discountPercentage }
+                            giftCards.first().copy(discountPercentage = discountPercentage)
                         }
+                        else -> null
                     }
                     if (giftCard != null) {
                         val merchantData = convert(brand, giftCard)
