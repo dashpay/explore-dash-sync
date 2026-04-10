@@ -139,7 +139,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
 
     @Throws(SQLException::class)
     private suspend fun importData(dbFile: File, locationsDbFile: File) {
-        val ctxDataSource = CTXSpendDataSource(slackMessenger, debug)
+        val ctxDataSource = CTXSpendDataSource(slackMessenger, mode, debug)
         val ctxData = ctxDataSource.getDataList()
         val ctxReport = ctxDataSource.getReport()
         val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode, debug)

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.flow
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.DataSourceReport
+import org.dash.mobile.explore.sync.OperationMode
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -23,15 +24,21 @@ import java.util.concurrent.TimeUnit
 import kotlin.let
 
 private const val BASE_URL = "https://spend.ctx.com/"
+private const val STAGING_BASE_URL = "https://staging.spend.ctx.com/"
 
 /**
  * Import data from CTXSpend API
  */
-class CTXSpendDataSource(slackMessenger: SlackMessenger, debugMode: Boolean) :
+class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMode: OperationMode, debugMode: Boolean) :
     DataSource<MerchantData>(slackMessenger, debugMode) {
     override val logger = LoggerFactory.getLogger(CTXSpendDataSource::class.java)!!
     val merchantList = hashSetOf<String>()
     var dataSourceReport: DataSourceReport? = null
+    val baseUrl = if (operationMode == OperationMode.PRODUCTION) BASE_URL else STAGING_BASE_URL
+
+    // Member fields for HTML generation
+    private var allMerchants = linkedMapOf<String, JsonObject>()
+    private var merchantLocations = linkedMapOf<String, MutableList<JsonObject>>() // merchantId -> locations
 
     interface Endpoint {
         data class Pagination(
@@ -48,8 +55,8 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, debugMode: Boolean) :
 
         @GET("merchants")
         suspend fun getAllMerchants(
-            @Header("X-Api-Key") apiKey: String,
-            @Header("X-Api-Secret") appKey: String,
+            //@Header("X-Api-Key") apiKey: String,
+            //@Header("X-Api-Secret") appKey: String,
             @Query("perPage") perPage: Int = 20,
             @Query("page") page: Int = 1
         ): MerchantsResponse
@@ -81,7 +88,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, debugMode: Boolean) :
             .build()
 
         val retrofit: Retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(baseUrl)
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(okHttpClient)
             .build()
@@ -99,7 +106,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, debugMode: Boolean) :
         require(apiKey.isNotEmpty())
         require(apiSecret.isNotEmpty())
 
-        logger.notice("Importing data from CTX Spend ($BASE_URL)")
+        logger.notice("Importing data from CTX Spend ($baseUrl)")
 
         val pageSize = 100
         var currentPageIndex = 1
