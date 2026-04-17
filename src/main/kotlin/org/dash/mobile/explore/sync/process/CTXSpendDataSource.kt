@@ -19,7 +19,10 @@ import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
+import java.io.File
 import java.io.IOException
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import kotlin.let
 
@@ -161,6 +164,8 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
         }
         logger.info("CTXSpend Merchants: ${merchants.size}")
         logger.info("CTXSpend Disabled Merchants: (${disabledMerchants.map { it.value["name"] }.joinToString(", ") }.)")
+        allMerchants = merchants
+        merchantLocations.clear()
         // load locations
         var counter = 0
         val locationResponse = apiService.getAllMerchantLocations(apiKey, apiSecret)
@@ -178,6 +183,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
 
                     if (isValidLocation(type, locationData)) {
                         counter++
+                        merchantLocations.getOrPut(merchantId.asString) { mutableListOf() }.add(locationData)
                         val merchantData = convert(merchant, locationData)
 
                         if (merchantData.name.isNullOrEmpty() || merchantData.address1?.contains("Address 1") == true) {
@@ -323,5 +329,226 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
 
     fun getReport(): DataSourceReport {
         return dataSourceReport ?: throw IllegalStateException("Report not yet generated. Call getRawData() first.")
+    }
+
+    override fun generateHtmlFile(): String? {
+        if (allMerchants.isEmpty()) {
+            logger.warn("No merchant data available for HTML generation")
+            return null
+        }
+
+        val currentDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        val filename = "ctx-${this.operationMode}-$currentDate.html"
+
+        logger.info("Generating HTML file: $filename")
+
+        val htmlContent = generateHtmlContent(allMerchants, merchantLocations, currentDate)
+
+        return try {
+            val file = File(filename)
+            file.writeText(htmlContent)
+            logger.info("HTML file generated successfully: ${file.absolutePath}")
+            filename
+        } catch (ex: IOException) {
+            logger.error("Failed to write HTML file: ${ex.message}", ex)
+            null
+        }
+    }
+
+    private fun generateHtmlContent(
+        merchants: Map<String, JsonObject>,
+        locations: Map<String, List<JsonObject>>,
+        currentDate: String
+    ): String {
+        val merchantsJson = merchants.entries.joinToString(",\n") { (id, m) ->
+            val name = escapeJson(m["name"]?.asString ?: "")
+            val logoUrl = escapeJson(m["logoUrl"]?.asString ?: "")
+            val website = escapeJson(m["website"]?.asString ?: "")
+            val savings = m["savingsPercentage"]?.let { if (!it.isJsonNull) it.asInt else null }
+            val redeemType = escapeJson(m["redeemType"]?.asString ?: "")
+            val denomType = escapeJson(m["denominationsType"]?.asString ?: "")
+            val type = escapeJson(m["type"]?.asString ?: "")
+            val enabled = escapeJson(m["enabled"].asString ?: "")
+            val locationCount = locations[id]?.size ?: 0
+            """        { "id": "$id", "name": "$name", "enabled": "$enabled", "logoUrl": "$logoUrl", "website": "$website", "savingsPercentage": ${savings ?: "null"}, "redeemType": "$redeemType", "denominationsType": "$denomType", "type": "$type", "locationCount": $locationCount }"""
+        }
+
+        val locationsJson = locations.entries.joinToString(",\n") { (merchantId, locs) ->
+            val locsJson = locs.joinToString(",\n") { loc ->
+                val address1 = escapeJson(loc["address1"]?.asString ?: "")
+                val address2 = escapeJson(loc["address2"]?.asString ?: "")
+                val city = escapeJson(loc["city"]?.asString ?: "")
+                val territory = escapeJson(loc["territory"]?.asString ?: "")
+                val postalCode = escapeJson(loc["postalCode"]?.asString ?: "")
+                val phone = escapeJson(loc["phone"]?.asString ?: "")
+                val lat = if (loc["latitude"]?.isJsonNull == false) loc["latitude"].asDouble else null
+                val lng = if (loc["longitude"]?.isJsonNull == false) loc["longitude"].asDouble else null
+                val locType = escapeJson(loc["address1"]?.asString?.let { if (it == "online") "online" else "physical" } ?: "physical")
+                """            { "address1": "$address1", "address2": "$address2", "city": "$city", "territory": "$territory", "postalCode": "$postalCode", "phone": "$phone", "latitude": ${lat ?: "null"}, "longitude": ${lng ?: "null"}, "type": "$locType" }"""
+            }
+            """        "$merchantId": [$locsJson]"""
+        }
+
+        val totalLocations = locations.values.sumOf { it.size }
+
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTX Spend ${this.operationMode} - $currentDate</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; height: 100vh; overflow: hidden; }
+        .container { display: flex; height: 100vh; }
+        .sidebar { width: 300px; background-color: #fff; border-right: 1px solid #e0e0e0; overflow-y: auto; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+        .sidebar-header { padding: 20px; background-color: #1565C0; color: white; text-align: center; }
+        .sidebar-header h1 { font-size: 1.2em; margin-bottom: 5px; }
+        .brand-item { padding: 15px 20px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background-color 0.2s; display: flex; align-items: center; }
+        .brand-item:hover { background-color: #f8f9fa; }
+        .brand-item.active { background-color: #e3f2fd; border-left: 4px solid #1565C0; }
+        .brand-logo { width: 40px; height: 40px; margin-right: 12px; border-radius: 4px; object-fit: cover; background-color: #f0f0f0; }
+        .brand-name { font-weight: 500; color: #333; font-size: 0.9em; }
+        .main-content { flex: 1; background-color: #fff; overflow-y: auto; padding: 20px; }
+        .content-header { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #f0f0f0; }
+        .brand-title { font-size: 1.8em; color: #333; display: flex; align-items: center; }
+        .brand-title img { width: 50px; height: 50px; margin-right: 12px; border-radius: 8px; object-fit: cover; }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 20px 0; }
+        .attribute { display: flex; flex-direction: column; padding: 12px; background-color: #f8f9fa; border-radius: 6px; border-left: 4px solid #1565C0; }
+        .attribute-label { font-size: 0.8em; color: #666; text-transform: uppercase; margin-bottom: 4px; }
+        .attribute-value { font-weight: 500; color: #333; }
+        .section-title { font-size: 1.2em; color: #555; margin: 20px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #e0e0e0; }
+        .table-container { overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 8px; }
+        .locations-table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+        .locations-table th { background-color: #f8f9fa; color: #555; font-weight: 600; padding: 10px 8px; text-align: left; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
+        .locations-table td { padding: 9px 8px; border-bottom: 1px solid #f0f0f0; color: #333; }
+        .locations-table tbody tr:hover { background-color: #f8f9fa; }
+        .locations-table tbody tr:last-child td { border-bottom: none; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
+        .badge-online { background-color: #e3f2fd; color: #1565C0; }
+        .badge-physical { background-color: #e8f5e9; color: #2e7d32; }
+        .empty-state { text-align: center; padding: 100px 20px; color: #999; }
+        .empty-state h2 { margin-bottom: 10px; }
+        .status-bar { background-color: #1565C0; color: white; padding: 10px 20px; text-align: center; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <div class="status-bar" id="statusBar">Data loaded from CTX Spend API</div>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>CTX Spend</h1>
+                <div>${this.operationMode} - $currentDate</div>
+            </div>
+            <div id="brandList"></div>
+        </div>
+        <div class="main-content" id="mainContent">
+            <div class="empty-state">
+                <h2>Select a Merchant</h2>
+                <p>Choose a merchant from the left sidebar to view its locations.</p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const merchants = [
+$merchantsJson
+        ];
+        const locations = {
+$locationsJson
+        };
+
+        class CTXViewer {
+            constructor() {
+                this.selectedMerchant = null;
+                this.statusBar = document.getElementById('statusBar');
+                this.brandList = document.getElementById('brandList');
+                this.mainContent = document.getElementById('mainContent');
+                this.init();
+            }
+
+            init() {
+                this.renderMerchantList();
+                this.updateStatus(`Loaded ${'$'}{merchants.length} merchants with $totalLocations total locations`);
+            }
+
+            renderMerchantList() {
+                this.brandList.innerHTML = '';
+                merchants.forEach(m => {
+                    const el = document.createElement('div');
+                    el.className = 'brand-item';
+                    el.onclick = () => this.selectMerchant(m, el);
+                    el.innerHTML = `
+                        <img class="brand-logo" src="${'$'}{m.logoUrl}" alt="${'$'}{m.name}" onerror="this.style.display='none'">
+                        <div class="brand-name">${'$'}{m.name} (${'$'}{m.locationCount})</div>
+                    `;
+                    this.brandList.appendChild(el);
+                });
+            }
+
+            selectMerchant(m, element) {
+                document.querySelectorAll('.brand-item').forEach(el => el.classList.remove('active'));
+                element.classList.add('active');
+                this.selectedMerchant = m;
+                this.renderMerchantDetails(m);
+            }
+
+            renderMerchantDetails(m) {
+                const locs = locations[m.id] || [];
+                this.mainContent.innerHTML = `
+                    <div class="content-header">
+                        <div class="brand-title">
+                            <img src="${'$'}{m.logoUrl}" alt="${'$'}{m.name}" onerror="this.style.display='none'">
+                            ${'$'}{m.name}
+                        </div>
+                    </div>
+                    <div class="info-grid">
+                        <div class="attribute"><div class="attribute-label">Merchant ID</div><div class="attribute-value">${'$'}{m.id}</div></div>
+                        <div class="attribute"><div class="attribute-label">Enabled</div><div class="attribute-value">${'$'}{m.enabled}</div></div>
+                        <div class="attribute"><div class="attribute-label">Type</div><div class="attribute-value">${'$'}{m.type}</div></div>
+                        <div class="attribute"><div class="attribute-label">Savings</div><div class="attribute-value">${'$'}{m.savingsPercentage != null ? m.savingsPercentage + ' bps' : 'N/A'}</div></div>
+                        <div class="attribute"><div class="attribute-label">Redeem Type</div><div class="attribute-value">${'$'}{m.redeemType || 'N/A'}</div></div>
+                        <div class="attribute"><div class="attribute-label">Denominations</div><div class="attribute-value">${'$'}{m.denominationsType || 'N/A'}</div></div>
+                        <div class="attribute"><div class="attribute-label">Website</div><div class="attribute-value">${'$'}{m.website ? '<a href="' + m.website + '" target="_blank">' + m.website + '</a>' : 'N/A'}</div></div>
+                        <div class="attribute"><div class="attribute-label">Locations</div><div class="attribute-value">${'$'}{locs.length}</div></div>
+                    </div>
+                    <h2 class="section-title">Locations (${'$'}{locs.length})</h2>
+                    ${'$'}{locs.length > 0 ? `
+                    <div class="table-container">
+                        <table class="locations-table">
+                            <thead><tr>
+                                <th>Type</th><th>Address</th><th>City</th><th>State</th><th>ZIP</th><th>Phone</th><th>Lat</th><th>Lng</th>
+                            </tr></thead>
+                            <tbody>${'$'}{locs.map(loc => `
+                                <tr>
+                                    <td><span class="badge badge-${'$'}{loc.type}">${'$'}{loc.type}</span></td>
+                                    <td>${'$'}{[loc.address1, loc.address2].filter(Boolean).join(', ')}</td>
+                                    <td>${'$'}{loc.city}</td>
+                                    <td>${'$'}{loc.territory}</td>
+                                    <td>${'$'}{loc.postalCode}</td>
+                                    <td>${'$'}{loc.phone}</td>
+                                    <td>${'$'}{loc.latitude != null ? loc.latitude.toFixed(4) : ''}</td>
+                                    <td>${'$'}{loc.longitude != null ? loc.longitude.toFixed(4) : ''}</td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>` : '<p style="color:#999;padding:20px">No locations found.</p>'}
+                `;
+            }
+
+            updateStatus(message) { this.statusBar.textContent = message; }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => { new CTXViewer(); });
+    </script>
+</body>
+</html>"""
+    }
+
+    private fun escapeJson(str: String): String {
+        return str.replace("\\", "\\\\")
+                  .replace("\"", "\\\"")
+                  .replace("\n", "\\n")
+                  .replace("\r", "\\r")
+                  .replace("\t", "\\t")
     }
 }

@@ -153,6 +153,19 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode, debug)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
+
+        // Generate HTML reports
+        listOf(ctxDataSource, piggyCardsDataSource).forEach { dataSource ->
+            val htmlFileName = dataSource.generateHtmlFile()
+            if (htmlFileName != null && !offlineMode) {
+                val htmlFile = File(htmlFileName)
+                if (htmlFile.exists()) {
+                    logger.info("Uploading HTML file to Google Cloud: $htmlFileName")
+                    gcManager.uploadObject(htmlFile, Calendar.getInstance().timeInMillis, "")
+                }
+            }
+        }
+
         val report = SyncReport(listOf(ctxReport, piggyCardsReport))
         if (debug) {
             saveMerchantDataToCsv(ctxData, "ctx.csv")
