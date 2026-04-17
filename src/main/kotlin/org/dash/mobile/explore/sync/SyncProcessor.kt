@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.CheckedInputStream
 
 @FlowPreview
-class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
+class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false, private val offlineMode: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
         const val BUILD = 6
@@ -58,81 +58,89 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         slackMessenger.quietMode = quietMode
         slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ($BUILD) ### - $mode", logger)
 
+        if (offlineMode) {
+            logger.notice("Offline mode: skipping all Google Cloud Storage operations")
+        }
+
         try {
-            val syncLock = gcManager.checkLock()
-            val syncLockCreateTime = syncLock.first
-            // lock expires after 10 minutes if it wasn't removed for any reason
-            val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(10))
-            if (lockValid) {
-                slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
-                return
+            if (!offlineMode) {
+                val syncLock = gcManager.checkLock()
+                val syncLockCreateTime = syncLock.first
+                // lock expires after 10 minutes if it wasn't removed for any reason
+                val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(10))
+                if (lockValid) {
+                    slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
+                    return
+                }
+                gcManager.createLockFile(mode.name)
             }
-            gcManager.createLockFile(mode.name)
 
             dbFile = createEmptyDB(workingDir)
             val locationsDbFile = createLocationsDB(workingDir)
             importData(dbFile, locationsDbFile)
 
-            val dbFileChecksum = calculateChecksum(dbFile)
-            logger.debug("DB file checksum $dbFileChecksum")
+            if (!offlineMode) {
+                val dbFileChecksum = calculateChecksum(dbFile)
+                logger.debug("DB file checksum $dbFileChecksum")
 
-            val dbZipFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
-            }
-
-            val dbZipFile = File(workingDir, dbZipFileName)
-
-            val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
-            val changesDetected = dbFileChecksum != remoteChecksum
-
-            if (changesDetected || forceUpload) {
-                if (changesDetected) {
-                    if (remoteChecksum != null) {
-                        slackMessenger.postSlackMessage(
-                            "Changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
-                            logger
-                        )
-                    } else {
-                        logger.notice("No remote data - uploading")
-                    }
-                } else {
-                    logger.notice("Force upload active - updating")
+                val dbZipFileName = when (mode) {
+                    OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
+                    OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
+                    OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
                 }
 
-                throwIfCanceled()
-                val timestamp = Calendar.getInstance().timeInMillis
-                val password = dbFileChecksum.toCharArray()
-                compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
+                val dbZipFile = File(workingDir, dbZipFileName)
 
-                throwIfCanceled()
-                // upload the zipped database
-                gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
-                // copy and upload the uncompressed database
-                val locationsDbChecksum = calculateChecksum(locationsDbFile)
-                gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
-            } else {
-                logger.notice("No changes were detected, updating canceled")
-                slackMessenger.postSlackMessage("No changes detected, updating canceled")
+                val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
+                val changesDetected = dbFileChecksum != remoteChecksum
+
+                if (changesDetected || forceUpload) {
+                    if (changesDetected) {
+                        if (remoteChecksum != null) {
+                            slackMessenger.postSlackMessage(
+                                "Changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
+                                logger
+                            )
+                        } else {
+                            logger.notice("No remote data - uploading")
+                        }
+                    } else {
+                        logger.notice("Force upload active - updating")
+                    }
+
+                    throwIfCanceled()
+                    val timestamp = Calendar.getInstance().timeInMillis
+                    val password = dbFileChecksum.toCharArray()
+                    compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
+
+                    throwIfCanceled()
+                    // upload the zipped database
+                    gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
+                    // copy and upload the uncompressed database
+                    val locationsDbChecksum = calculateChecksum(locationsDbFile)
+                    gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
+                } else {
+                    logger.notice("No changes were detected, updating canceled")
+                    slackMessenger.postSlackMessage("No changes detected, updating canceled")
+                }
+
+                gcManager.deleteLockFile()
             }
 
             slackMessenger.postSlackMessage("### Sync finished ###", logger)
-
-            gcManager.deleteLockFile()
         } catch (ex: InterruptedException) {
             slackMessenger.postSlackMessage("!!! Sync canceled !!!", logger)
-            gcManager.deleteLockFile()
+            if (!offlineMode) gcManager.deleteLockFile()
         } catch (ex: Exception) {
             logger.error(ex.message, ex)
             slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}")
-            gcManager.deleteLockFile()
+            if (!offlineMode) gcManager.deleteLockFile()
         }
     }
 
     @Throws(InterruptedException::class)
     private fun throwIfCanceled() {
-        if (gcManager.cancelRequested()) {
+        if (!offlineMode && gcManager.cancelRequested()) {
             throw InterruptedException("Sync canceled")
         }
     }
@@ -201,7 +209,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         }
 
         // Compare to the previously created database
-        val previousLocationsFile = gcManager.downloadMostRecentLocationsDb()
+        val previousLocationsFile = if (!offlineMode) gcManager.downloadMostRecentLocationsDb() else null
         
         val ctxLocations = mutableListOf<MerchantData>()
         val piggyCardsLocations = mutableListOf<MerchantData>()
