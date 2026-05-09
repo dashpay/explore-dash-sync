@@ -82,8 +82,8 @@ class GCManager(private val mode: OperationMode) {
 
     @Throws(IOException::class)
     fun cancelRequested(): Boolean {
-        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName)
-        return lockFile.metadata["cancel"] == "true"
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName) ?: return false
+        return lockFile.metadata?.get("cancel") == "true"
     }
 
     @Throws(IOException::class)
