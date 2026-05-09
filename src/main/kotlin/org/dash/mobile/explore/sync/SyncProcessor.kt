@@ -34,6 +34,7 @@ import java.sql.SQLException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.CheckedInputStream
 
 @FlowPreview
@@ -41,6 +42,12 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
     companion object {
         const val CURRENT_VERSION = 4
         const val BUILD = 7
+
+        // Prevents two concurrent invocations in the same JVM (Cloud Function container)
+        // from racing on /tmp files (e.g. SQLITE_READONLY_DBMOVED when one deletes
+        // /tmp/explore.db while the other holds an open JDBC connection).
+        private val isRunning = AtomicBoolean(false)
+
     }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
@@ -56,6 +63,15 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
     @FlowPreview
     suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
+
+        if (!isRunning.compareAndSet(false, true)) {
+            slackMessenger.postSlackMessage(
+                "Sync skipped: another invocation is still running in this instance - $mode",
+                logger
+            )
+            return
+        }
+
         slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ($BUILD) ### - $mode", logger)
 
         if (offlineMode) {
@@ -66,8 +82,8 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             if (!offlineMode) {
                 val syncLock = gcManager.checkLock()
                 val syncLockCreateTime = syncLock.first
-                // lock expires after 10 minutes if it wasn't removed for any reason
-                val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(10))
+                // lock expires after 120 minutes if it wasn't removed for any reason
+                val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(2 * 60))
                 if (lockValid) {
                     slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
                     return
@@ -135,6 +151,8 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             logger.error(ex.message, ex)
             slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}")
             if (!offlineMode) gcManager.deleteLockFile()
+        } finally {
+            isRunning.set(false)
         }
     }
 
