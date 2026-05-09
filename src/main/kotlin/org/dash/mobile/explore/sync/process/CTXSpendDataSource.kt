@@ -21,6 +21,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 import java.io.File
 import java.io.IOException
+import java.io.Writer
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
@@ -344,11 +345,11 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
 
         logger.info("Generating HTML file: $filename")
 
-        val htmlContent = generateHtmlContent(allMerchants, merchantLocations, currentDate)
-
         return try {
             val file = File(filename)
-            file.writeText(htmlContent)
+            file.bufferedWriter().use { writer ->
+                writeHtmlContent(writer, allMerchants, merchantLocations, currentDate)
+            }
             logger.info("HTML file generated successfully: ${file.absolutePath}")
             filename
         } catch (ex: IOException) {
@@ -357,43 +358,27 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
         }
     }
 
-    private fun generateHtmlContent(
+    private fun writeMerchantEntry(writer: Writer, id: String, m: JsonObject, locationCount: Int) {
+        val name = escapeJson(m["name"]?.asString ?: "")
+        val logoUrl = escapeJson(m["logoUrl"]?.asString ?: "")
+        val website = escapeJson(m["website"]?.asString ?: "")
+        val savings = m["savingsPercentage"]?.let { if (!it.isJsonNull) it.asInt else null }
+        val redeemType = escapeJson(m["redeemType"]?.asString ?: "")
+        val denomType = escapeJson(m["denominationsType"]?.asString ?: "")
+        val type = escapeJson(m["type"]?.asString ?: "")
+        val enabled = escapeJson(m["enabled"].asString ?: "")
+        writer.write("""        { "id": "$id", "name": "$name", "enabled": "$enabled", "logoUrl": "$logoUrl", "website": "$website", "savingsPercentage": ${savings ?: "null"}, "redeemType": "$redeemType", "denominationsType": "$denomType", "type": "$type", "locationCount": $locationCount }""")
+    }
+
+    private fun writeHtmlContent(
+        writer: Writer,
         merchants: Map<String, JsonObject>,
         locations: Map<String, List<JsonObject>>,
         currentDate: String
-    ): String {
-        val merchantsJson = merchants.entries.joinToString(",\n") { (id, m) ->
-            val name = escapeJson(m["name"]?.asString ?: "")
-            val logoUrl = escapeJson(m["logoUrl"]?.asString ?: "")
-            val website = escapeJson(m["website"]?.asString ?: "")
-            val savings = m["savingsPercentage"]?.let { if (!it.isJsonNull) it.asInt else null }
-            val redeemType = escapeJson(m["redeemType"]?.asString ?: "")
-            val denomType = escapeJson(m["denominationsType"]?.asString ?: "")
-            val type = escapeJson(m["type"]?.asString ?: "")
-            val enabled = escapeJson(m["enabled"].asString ?: "")
-            val locationCount = locations[id]?.size ?: 0
-            """        { "id": "$id", "name": "$name", "enabled": "$enabled", "logoUrl": "$logoUrl", "website": "$website", "savingsPercentage": ${savings ?: "null"}, "redeemType": "$redeemType", "denominationsType": "$denomType", "type": "$type", "locationCount": $locationCount }"""
-        }
-
-        val locationsJson = locations.entries.joinToString(",\n") { (merchantId, locs) ->
-            val locsJson = locs.joinToString(",\n") { loc ->
-                val address1 = escapeJson(loc["address1"]?.asString ?: "")
-                val address2 = escapeJson(loc["address2"]?.asString ?: "")
-                val city = escapeJson(loc["city"]?.asString ?: "")
-                val territory = escapeJson(loc["territory"]?.asString ?: "")
-                val postalCode = escapeJson(loc["postalCode"]?.asString ?: "")
-                val phone = escapeJson(loc["phone"]?.asString ?: "")
-                val lat = if (loc["latitude"]?.isJsonNull == false) loc["latitude"].asDouble else null
-                val lng = if (loc["longitude"]?.isJsonNull == false) loc["longitude"].asDouble else null
-                val locType = escapeJson(loc["address1"]?.asString?.let { if (it == "online") "online" else "physical" } ?: "physical")
-                """            { "address1": "$address1", "address2": "$address2", "city": "$city", "territory": "$territory", "postalCode": "$postalCode", "phone": "$phone", "latitude": ${lat ?: "null"}, "longitude": ${lng ?: "null"}, "type": "$locType" }"""
-            }
-            """        "$merchantId": [$locsJson]"""
-        }
-
+    ) {
         val totalLocations = locations.values.sumOf { it.size }
 
-        return """<!DOCTYPE html>
+        writer.write("""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -453,11 +438,17 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
     </div>
     <script>
         const merchants = [
-$merchantsJson
+""")
+
+        var firstMerchant = true
+        for ((id, m) in merchants) {
+            if (!firstMerchant) writer.write(",\n")
+            firstMerchant = false
+            writeMerchantEntry(writer, id, m, locations[id]?.size ?: 0)
+        }
+
+        writer.write("""
         ];
-        const locations = {
-$locationsJson
-        };
 
         class CTXViewer {
             constructor() {
@@ -495,7 +486,6 @@ $locationsJson
             }
 
             renderMerchantDetails(m) {
-                const locs = locations[m.id] || [];
                 this.mainContent.innerHTML = `
                     <div class="content-header">
                         <div class="brand-title">
@@ -511,29 +501,8 @@ $locationsJson
                         <div class="attribute"><div class="attribute-label">Redeem Type</div><div class="attribute-value">${'$'}{m.redeemType || 'N/A'}</div></div>
                         <div class="attribute"><div class="attribute-label">Denominations</div><div class="attribute-value">${'$'}{m.denominationsType || 'N/A'}</div></div>
                         <div class="attribute"><div class="attribute-label">Website</div><div class="attribute-value">${'$'}{m.website ? '<a href="' + m.website + '" target="_blank">' + m.website + '</a>' : 'N/A'}</div></div>
-                        <div class="attribute"><div class="attribute-label">Locations</div><div class="attribute-value">${'$'}{locs.length}</div></div>
+                        <div class="attribute"><div class="attribute-label">Locations</div><div class="attribute-value">${'$'}{m.locationCount}</div></div>
                     </div>
-                    <h2 class="section-title">Locations (${'$'}{locs.length})</h2>
-                    ${'$'}{locs.length > 0 ? `
-                    <div class="table-container">
-                        <table class="locations-table">
-                            <thead><tr>
-                                <th>Type</th><th>Address</th><th>City</th><th>State</th><th>ZIP</th><th>Phone</th><th>Lat</th><th>Lng</th>
-                            </tr></thead>
-                            <tbody>${'$'}{locs.map(loc => `
-                                <tr>
-                                    <td><span class="badge badge-${'$'}{loc.type}">${'$'}{loc.type}</span></td>
-                                    <td>${'$'}{[loc.address1, loc.address2].filter(Boolean).join(', ')}</td>
-                                    <td>${'$'}{loc.city}</td>
-                                    <td>${'$'}{loc.territory}</td>
-                                    <td>${'$'}{loc.postalCode}</td>
-                                    <td>${'$'}{loc.phone}</td>
-                                    <td>${'$'}{loc.latitude != null ? loc.latitude.toFixed(4) : ''}</td>
-                                    <td>${'$'}{loc.longitude != null ? loc.longitude.toFixed(4) : ''}</td>
-                                </tr>`).join('')}
-                            </tbody>
-                        </table>
-                    </div>` : '<p style="color:#999;padding:20px">No locations found.</p>'}
                 `;
             }
 
@@ -543,7 +512,7 @@ $locationsJson
         document.addEventListener('DOMContentLoaded', () => { new CTXViewer(); });
     </script>
 </body>
-</html>"""
+</html>""")
     }
 
     private fun escapeJson(str: String): String {
