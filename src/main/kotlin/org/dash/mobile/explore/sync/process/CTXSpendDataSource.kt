@@ -58,8 +58,8 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
 
         @GET("merchants")
         suspend fun getAllMerchants(
-            //@Header("X-Api-Key") apiKey: String,
-            //@Header("X-Api-Secret") appKey: String,
+            @Header("X-Api-Key") apiKey: String,
+            @Header("X-Api-Secret") appKey: String,
             @Query("perPage") perPage: Int = 20,
             @Query("page") page: Int = 1
         ): MerchantsResponse
@@ -163,7 +163,9 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
             }
         }
         logger.info("CTXSpend Merchants: ${merchants.size}")
-        logger.info("CTXSpend Disabled Merchants: (${disabledMerchants.map { it.value["name"] }.joinToString(", ") }.)")
+        logger.info("CTXSpend Disabled Merchants: (${
+            disabledMerchants.map { it.value["name"] }.joinToString(", ") 
+        })")
         allMerchants = merchants
         merchantLocations.clear()
         // load locations
