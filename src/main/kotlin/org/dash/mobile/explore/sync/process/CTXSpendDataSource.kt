@@ -197,8 +197,10 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
                         }
                     } else {
                         invalid++
-                        invalidLocations[locationData["id"].asString] = locationData
-
+                        val locationKey = locationData["id"]?.asString
+                            ?: locationData["merchantId"]?.asString
+                            ?: "unknown"
+                        invalidLocations[locationKey] = locationData
                     }
                 } ?: logMissingMerchant(merchantId, merchants)
             }
@@ -219,10 +221,10 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
     private val missingMerchants = hashSetOf<String>()
 
     private fun logMissingMerchant(merchantId: JsonElement, merchants: Map<String, JsonObject>) {
-        if (!missingMerchants.contains(merchantId.asString)) {
+        // Set.add returns true only the first time the id is seen, so each missing
+        // merchant is warned about exactly once.
+        if (missingMerchants.add(merchantId.asString)) {
             logger.warn("merchant id not found: {}: {}", merchantId.asString, merchants[merchantId.asString]?.get("name"))
-        } else {
-            missingMerchants.add(merchantId.asString)
         }
     }
 
@@ -237,7 +239,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
             paymentMethod = "gift card"
             merchantId = convertJsonData("id", merchantData)
             active = true
-            name = convertJsonData("name", merchantData)
+            name = MerchantNameNormalizer.getNormalizedName(convertJsonData("name", merchantData))
             address1 = getAddress1(location)
             address2 = getAddress2(location)
             address3 = convertJsonData("postalCode", location)
@@ -300,12 +302,16 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
 
     private fun getType(merchant: JsonObject, location: JsonObject): String? {
 
-        val isPhysical = merchant["type"].asString == "physical"
-        val isOnline = merchant["type"].asString == "online"
+        val merchantType = merchant["type"]?.asString
+        val isPhysical = merchantType == "physical" || merchantType == "any"
+        // CTX uses "any" for merchants redeemable both online and in-store; treat it like "online"
+        // and let the location address decide whether it is physical
+        val isOnline = merchantType == "online" || merchantType == "any"
+        val locationAddress1 = location["address1"]?.asString
         return when {
-            isPhysical && isOnline -> "both"
+            // isPhysical && isOnline -> "both"
             isPhysical -> "physical"
-            isOnline && location["address1"].asString != "online" -> "physical" // CTX marks all merchants as online, but if the location has an address, then it is physical
+            isOnline && locationAddress1 != "online" -> "physical"
             isOnline -> "online"
             else -> {
                 logger.error("Merchant has invalid type:\n$merchant")
