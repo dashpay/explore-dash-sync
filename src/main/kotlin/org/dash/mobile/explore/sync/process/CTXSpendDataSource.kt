@@ -1,5 +1,6 @@
 package org.dash.mobile.explore.sync.process
 
+import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
@@ -365,15 +366,19 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
     }
 
     private fun writeMerchantEntry(writer: Writer, id: String, m: JsonObject, locationCount: Int) {
-        val name = escapeJson(m["name"]?.asString ?: "")
-        val logoUrl = escapeJson(m["logoUrl"]?.asString ?: "")
-        val website = escapeJson(m["website"]?.asString ?: "")
-        val savings = m["savingsPercentage"]?.let { if (!it.isJsonNull) it.asInt else null }
-        val redeemType = escapeJson(m["redeemType"]?.asString ?: "")
-        val denomType = escapeJson(m["denominationsType"]?.asString ?: "")
-        val type = escapeJson(m["type"]?.asString ?: "")
-        val enabled = escapeJson(m["enabled"].asString ?: "")
-        writer.write("""        { "id": "$id", "name": "$name", "enabled": "$enabled", "logoUrl": "$logoUrl", "website": "$website", "savingsPercentage": ${savings ?: "null"}, "redeemType": "$redeemType", "denominationsType": "$denomType", "type": "$type", "locationCount": $locationCount }""")
+        val entry = JsonObject().apply {
+            addProperty("id", id)
+            addProperty("name", m["name"]?.asString ?: "")
+            addProperty("enabled", m["enabled"]?.asString ?: "")
+            addProperty("logoUrl", m["logoUrl"]?.asString ?: "")
+            addProperty("website", m["website"]?.asString ?: "")
+            addProperty("savingsPercentage", m["savingsPercentage"]?.let { if (!it.isJsonNull) it.asInt else null })
+            addProperty("redeemType", m["redeemType"]?.asString ?: "")
+            addProperty("denominationsType", m["denominationsType"]?.asString ?: "")
+            addProperty("type", m["type"]?.asString ?: "")
+            addProperty("locationCount", locationCount)
+        }
+        writer.write("        " + toJsScriptSafe(entry))
     }
 
     private fun writeHtmlContent(
@@ -521,11 +526,16 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
 </html>""")
     }
 
-    private fun escapeJson(str: String): String {
-        return str.replace("\\", "\\\\")
-                  .replace("\"", "\\\"")
-                  .replace("\n", "\\n")
-                  .replace("\r", "\\r")
-                  .replace("\t", "\\t")
+    /**
+     * Serializes a JSON value with Gson (correctly escaping control characters) and makes it
+     * safe to inline inside an HTML <script> block by neutralizing closing-tag sequences such
+     * as </script>.
+     */
+    private fun toJsScriptSafe(value: JsonElement): String {
+        return jsonGson.toJson(value).replace("</", "<\\/")
+    }
+
+    companion object {
+        private val jsonGson = Gson()
     }
 }
