@@ -95,18 +95,24 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             val locationsDbFile = createLocationsDB(workingDir)
             importData(dbFile, locationsDbFile)
 
-            if (!offlineMode) {
-                val dbFileChecksum = calculateChecksum(dbFile)
-                logger.debug("DB file checksum $dbFileChecksum")
+            val dbFileChecksum = calculateChecksum(dbFile)
+            logger.debug("DB file checksum $dbFileChecksum")
 
-                val dbZipFileName = when (mode) {
-                    OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
-                    OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
-                    OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
-                }
+            val dbZipFileName = when (mode) {
+                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
+                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
+                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
+            }
 
-                val dbZipFile = File(workingDir, dbZipFileName)
+            val dbZipFile = File(workingDir, dbZipFileName)
 
+            if (offlineMode) {
+                // Offline mode: still produce the zip locally, just skip remote checksum and uploads
+                val timestamp = Calendar.getInstance().timeInMillis
+                val password = dbFileChecksum.toCharArray()
+                compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
+                logger.notice("Offline mode: created ${dbZipFile.absolutePath}")
+            } else {
                 val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
                 val changesDetected = dbFileChecksum != remoteChecksum
 
