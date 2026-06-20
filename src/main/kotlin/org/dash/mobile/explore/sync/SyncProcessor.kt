@@ -34,13 +34,20 @@ import java.sql.SQLException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.CheckedInputStream
 
 @FlowPreview
-class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false) {
+class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false, private val offlineMode: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
-        const val BUILD = 6
+        const val BUILD = 8
+
+        // Prevents two concurrent invocations in the same JVM (Cloud Function container)
+        // from racing on /tmp files (e.g. SQLITE_READONLY_DBMOVED when one deletes
+        // /tmp/explore.db while the other holds an open JDBC connection).
+        private val isRunning = AtomicBoolean(false)
+
     }
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
@@ -56,18 +63,33 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
     @FlowPreview
     suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
         slackMessenger.quietMode = quietMode
+
+        if (!isRunning.compareAndSet(false, true)) {
+            slackMessenger.postSlackMessage(
+                "Sync skipped: another invocation is still running in this instance - $mode",
+                logger
+            )
+            return
+        }
+
         slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ($BUILD) ### - $mode", logger)
 
+        if (offlineMode) {
+            logger.notice("Offline mode: skipping all Google Cloud Storage operations")
+        }
+
         try {
-            val syncLock = gcManager.checkLock()
-            val syncLockCreateTime = syncLock.first
-            // lock expires after 10 minutes if it wasn't removed for any reason
-            val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(10))
-            if (lockValid) {
-                slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
-                return
+            if (!offlineMode) {
+                val syncLock = gcManager.checkLock()
+                val syncLockCreateTime = syncLock.first
+                // lock expires after 120 minutes if it wasn't removed for any reason
+                val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(2 * 60))
+                if (lockValid) {
+                    slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
+                    return
+                }
+                gcManager.createLockFile(mode.name)
             }
-            gcManager.createLockFile(mode.name)
 
             dbFile = createEmptyDB(workingDir)
             val locationsDbFile = createLocationsDB(workingDir)
@@ -84,67 +106,90 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
 
             val dbZipFile = File(workingDir, dbZipFileName)
 
-            val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
-            val changesDetected = dbFileChecksum != remoteChecksum
-
-            if (changesDetected || forceUpload) {
-                if (changesDetected) {
-                    if (remoteChecksum != null) {
-                        slackMessenger.postSlackMessage(
-                            "Changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
-                            logger
-                        )
-                    } else {
-                        logger.notice("No remote data - uploading")
-                    }
-                } else {
-                    logger.notice("Force upload active - updating")
-                }
-
-                throwIfCanceled()
+            if (offlineMode) {
+                // Offline mode: still produce the zip locally, just skip remote checksum and uploads
                 val timestamp = Calendar.getInstance().timeInMillis
                 val password = dbFileChecksum.toCharArray()
                 compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
-
-                throwIfCanceled()
-                // upload the zipped database
-                gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
-                // copy and upload the uncompressed database
-                val locationsDbChecksum = calculateChecksum(locationsDbFile)
-                gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
+                logger.notice("Offline mode: created ${dbZipFile.absolutePath}")
             } else {
-                logger.notice("No changes were detected, updating canceled")
-                slackMessenger.postSlackMessage("No changes detected, updating canceled")
+                val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
+                val changesDetected = dbFileChecksum != remoteChecksum
+
+                if (changesDetected || forceUpload) {
+                    if (changesDetected) {
+                        if (remoteChecksum != null) {
+                            slackMessenger.postSlackMessage(
+                                "Changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
+                                logger
+                            )
+                        } else {
+                            logger.notice("No remote data - uploading")
+                        }
+                    } else {
+                        logger.notice("Force upload active - updating")
+                    }
+
+                    throwIfCanceled()
+                    val timestamp = Calendar.getInstance().timeInMillis
+                    val password = dbFileChecksum.toCharArray()
+                    compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
+
+                    throwIfCanceled()
+                    // upload the zipped database
+                    gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
+                    // copy and upload the uncompressed database
+                    val locationsDbChecksum = calculateChecksum(locationsDbFile)
+                    gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
+                } else {
+                    logger.notice("No changes were detected, updating canceled")
+                    slackMessenger.postSlackMessage("No changes detected, updating canceled")
+                }
+
+                gcManager.deleteLockFile()
             }
 
             slackMessenger.postSlackMessage("### Sync finished ###", logger)
-
-            gcManager.deleteLockFile()
         } catch (ex: InterruptedException) {
             slackMessenger.postSlackMessage("!!! Sync canceled !!!", logger)
-            gcManager.deleteLockFile()
+            if (!offlineMode) gcManager.deleteLockFile()
         } catch (ex: Exception) {
             logger.error(ex.message, ex)
             slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}")
-            gcManager.deleteLockFile()
+            if (!offlineMode) gcManager.deleteLockFile()
+        } finally {
+            isRunning.set(false)
         }
     }
 
     @Throws(InterruptedException::class)
     private fun throwIfCanceled() {
-        if (gcManager.cancelRequested()) {
+        if (!offlineMode && gcManager.cancelRequested()) {
             throw InterruptedException("Sync canceled")
         }
     }
 
     @Throws(SQLException::class)
     private suspend fun importData(dbFile: File, locationsDbFile: File) {
-        val ctxDataSource = CTXSpendDataSource(slackMessenger, debug)
+        val ctxDataSource = CTXSpendDataSource(slackMessenger, mode, debug)
         val ctxData = ctxDataSource.getDataList()
         val ctxReport = ctxDataSource.getReport()
         val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode, debug)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
+
+        // Generate HTML reports
+        listOf(ctxDataSource, piggyCardsDataSource).forEach { dataSource ->
+            val htmlFileName = dataSource.generateHtmlFile()
+            if (htmlFileName != null && !offlineMode) {
+                val htmlFile = File(htmlFileName)
+                if (htmlFile.exists()) {
+                    logger.info("Uploading HTML file to Google Cloud: $htmlFileName")
+                    gcManager.uploadObject(htmlFile, Calendar.getInstance().timeInMillis, "")
+                }
+            }
+        }
+
         val report = SyncReport(listOf(ctxReport, piggyCardsReport))
         if (debug) {
             saveMerchantDataToCsv(ctxData, "ctx.csv")
@@ -201,7 +246,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         }
 
         // Compare to the previously created database
-        val previousLocationsFile = gcManager.downloadMostRecentLocationsDb()
+        val previousLocationsFile = if (!offlineMode) gcManager.downloadMostRecentLocationsDb() else null
         
         val ctxLocations = mutableListOf<MerchantData>()
         val piggyCardsLocations = mutableListOf<MerchantData>()

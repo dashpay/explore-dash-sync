@@ -19,7 +19,10 @@ import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
+import java.io.File
 import java.io.IOException
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
@@ -38,6 +41,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
     private var token: String = ""
     override val logger = LoggerFactory.getLogger(PiggyCardsDataSource::class.java)!!
     val merchantList = hashSetOf<String>()
+
+    // Member fields for HTML generation
+    private var allBrands = mutableListOf<Endpoint.Brand>()
+    private var brandToGiftcards = mutableMapOf<String, List<Endpoint.Giftcard>>()
+
     val disabledList = arrayListOf<String>(
         // no items
     )
@@ -218,6 +226,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
         try {
             val brands = apiService.getBrands(country)
+            allBrands.clear()
+            allBrands.addAll(brands)
+            brandToGiftcards.clear()
             logger.info("PiggyCard Merchants: ${brands.size}")
             brands.forEach { brand ->
                 logger.info("brand: $brand")
@@ -231,6 +242,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
                 if (giftcardsResponse != null && giftcardsResponse.code == 200) {
                     logger.info("  PiggyCards Gift Cards: ${giftcardsResponse.data?.size ?: 0}")
+                    brandToGiftcards[brand.id] = giftcardsResponse.data ?: emptyList()
                     var discountPercentage = 0.0
                     val immediateDeliveryCards = arrayListOf<Endpoint.Giftcard>()
                     // remove disabled cards
@@ -268,10 +280,11 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                             immediateDeliveryCards.first().copy(discountPercentage = discountPercentage)
                         }
                         firstRangeCard != null -> firstRangeCard
-                        else -> {
-                            discountPercentage = giftCards?.maxOf { it.discountPercentage } ?: 0.0
-                            giftCards?.first()?.copy(discountPercentage = discountPercentage)
+                        !giftCards.isNullOrEmpty() -> {
+                            discountPercentage = giftCards.maxOf { it.discountPercentage }
+                            giftCards.first().copy(discountPercentage = discountPercentage)
                         }
+                        else -> null
                     }
                     if (giftCard != null) {
                         val merchantData = convert(brand, giftCard)
@@ -397,5 +410,291 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
 
     fun getReport(): DataSourceReport {
         return dataSourceReport ?: throw IllegalStateException("Report not yet generated. Call getRawData() first.")
+    }
+
+    override fun generateHtmlFile(): String? {
+        if (allBrands.isEmpty()) {
+            logger.warn("No brands data available for HTML generation")
+            return null
+        }
+
+        val currentDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        val filename = "piggycards-${this.mode}-$currentDate.html"
+
+        logger.info("Generating HTML file: $filename")
+
+        val htmlContent = generateHtmlContent(allBrands, brandToGiftcards, currentDate)
+
+        return try {
+            val file = File(filename)
+            file.writeText(htmlContent)
+            logger.info("HTML file generated successfully: ${file.absolutePath}")
+            filename
+        } catch (ex: IOException) {
+            logger.error("Failed to write HTML file: ${ex.message}", ex)
+            null
+        }
+    }
+
+    private fun generateHtmlContent(brands: List<Endpoint.Brand>, brandToGiftcards: Map<String, List<Endpoint.Giftcard>>, currentDate: String): String {
+        val brandsJson = brands.joinToString(",\n") { brand ->
+            """        { "id": "${brand.id}", "name": "${escapeJson(brand.name)}" }"""
+        }
+
+        val giftcardsJson = brandToGiftcards.entries.joinToString(",\n") { (brandId, giftcards) ->
+            val cardsJson = giftcards.joinToString(",\n") { card ->
+                val effectiveDiscount = ((card.discountPercentage * 100) - SERVICE_FEE) / 100.0
+                """            {
+                "id": ${card.id},
+                "name": "${escapeJson(card.name)}",
+                "description": "${escapeJson(cleanHtmlDescription(card.description))}",
+                "image": "${escapeJson(card.image)}",
+                "priceType": "${escapeJson(card.priceType)}",
+                "currency": "${escapeJson(card.currency)}",
+                "discountPercentage": ${card.discountPercentage},
+                "effectiveDiscount": $effectiveDiscount,
+                "minDenomination": ${card.minDenomination},
+                "maxDenomination": ${card.maxDenomination},
+                "denomination": "${escapeJson(card.denomination)}",
+                "fee": ${card.fee},
+                "quantity": ${card.quantity},
+                "brandId": ${card.brandId}
+            }"""
+            }
+            """        "$brandId": [$cardsJson]"""
+        }
+
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PiggyCards ${this.mode} - $currentDate</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f5f5f5; height: 100vh; overflow: hidden; }
+        .container { display: flex; height: 100vh; }
+        .sidebar { width: 300px; background-color: #fff; border-right: 1px solid #e0e0e0; overflow-y: auto; box-shadow: 2px 0 10px rgba(0,0,0,0.1); }
+        .sidebar-header { padding: 20px; background-color: #4CAF50; color: white; text-align: center; }
+        .sidebar-header h1 { font-size: 1.2em; margin-bottom: 5px; }
+        .brand-list { padding: 0; }
+        .brand-item { padding: 15px 20px; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background-color 0.2s; display: flex; align-items: center; }
+        .brand-item:hover { background-color: #f8f9fa; }
+        .brand-item.active { background-color: #e3f2fd; border-left: 4px solid #2196F3; }
+        .brand-logo { width: 40px; height: 40px; margin-right: 12px; border-radius: 4px; object-fit: cover; background-color: #f0f0f0; }
+        .brand-name { font-weight: 500; color: #333; }
+        .main-content { flex: 1; background-color: #fff; overflow-y: auto; padding: 20px; }
+        .content-header { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #f0f0f0; }
+        .brand-title { font-size: 2.2em; color: #333; margin-bottom: 10px; display: flex; align-items: center; }
+        .brand-title img { width: 60px; height: 60px; margin-right: 15px; border-radius: 8px; object-fit: cover; }
+        .giftcards-section { margin-bottom: 40px; }
+        .section-title { font-size: 1.5em; color: #555; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #e0e0e0; }
+        .discount-positive { color: #4CAF50; font-weight: bold; }
+        .discount-negative { color: #f44336; font-weight: bold; }
+        .brand-description { background-color: #f8f9fa; padding: 25px; border-radius: 8px; margin-top: 20px; }
+        .brand-description h3 { color: #333; margin-bottom: 15px; font-size: 1.3em; }
+        .attributes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+        .attribute { display: flex; flex-direction: column; padding: 12px; background-color: #fff; border-radius: 6px; border-left: 4px solid #2196F3; }
+        .attribute-label { font-size: 0.85em; color: #666; text-transform: uppercase; margin-bottom: 4px; }
+        .attribute-value { font-weight: 500; color: #333; }
+        .empty-state { text-align: center; padding: 100px 20px; color: #999; }
+        .empty-state h2 { margin-bottom: 10px; }
+        .status-bar { background-color: #4CAF50; color: white; padding: 10px 20px; text-align: center; font-size: 0.9em; }
+        .table-container { overflow-x: auto; border: 1px solid #e0e0e0; border-radius: 8px; background-color: white; }
+        .giftcards-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .giftcards-table th { background-color: #f8f9fa; color: #555; font-weight: 600; padding: 12px 8px; text-align: left; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
+        .giftcards-table td { padding: 10px 8px; border-bottom: 1px solid #f0f0f0; color: #333; }
+        .giftcards-table tbody tr:hover { background-color: #f8f9fa; }
+        .giftcards-table tbody tr:last-child td { border-bottom: none; }
+        .giftcards-table tbody tr.selected { background-color: #e3f2fd !important; border-left: 4px solid #2196F3; }
+        .giftcard-descriptions { background-color: #f8f9fa; padding: 25px; border-radius: 8px; margin-top: 20px; }
+        .giftcard-descriptions h3 { color: #333; margin-bottom: 20px; font-size: 1.3em; }
+        .description-item { background-color: white; padding: 15px; border-radius: 6px; border-left: 4px solid #2196F3; }
+        .description-item h4 { color: #333; margin-bottom: 8px; font-size: 1.1em; }
+        .description-item p { color: #666; line-height: 1.4; margin: 0; }
+    </style>
+</head>
+<body>
+    <div class="status-bar" id="statusBar">Data loaded from PiggyCards API</div>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>PiggyCards</h1>
+                <div>${this.mode} - $currentDate</div>
+            </div>
+            <div class="brand-list" id="brandList"></div>
+        </div>
+        <div class="main-content" id="mainContent">
+            <div class="empty-state">
+                <h2>Select a Brand</h2>
+                <p>Choose a brand from the left sidebar to view its gift cards and details.</p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const brands = [
+$brandsJson
+        ];
+        const giftcards = {
+$giftcardsJson
+        };
+
+        class PiggyCardsViewer {
+            constructor() {
+                this.selectedBrand = null;
+                this.statusBar = document.getElementById('statusBar');
+                this.brandList = document.getElementById('brandList');
+                this.mainContent = document.getElementById('mainContent');
+                this.init();
+            }
+
+            init() {
+                this.renderBrandList();
+                this.updateStatus(`Loaded ${'$'}{brands.length} brands with ${'$'}{Object.values(giftcards).reduce((sum, cards) => sum + cards.length, 0)} total gift cards`);
+            }
+
+            renderBrandList() {
+                this.brandList.innerHTML = '';
+                brands.forEach(brand => {
+                    const brandElement = document.createElement('div');
+                    brandElement.className = 'brand-item';
+                    brandElement.onclick = () => this.selectBrand(brand, brandElement);
+                    const giftcardsForBrand = giftcards[brand.id] || [];
+                    const firstCard = giftcardsForBrand[0];
+                    const logoUrl = firstCard ? firstCard.image : '';
+                    brandElement.innerHTML = `
+                        <img class="brand-logo" src="${'$'}{logoUrl}" alt="${'$'}{brand.name}" onerror="this.style.display='none'">
+                        <div class="brand-name">${'$'}{brand.name} (${'$'}{giftcardsForBrand.length})</div>
+                    `;
+                    this.brandList.appendChild(brandElement);
+                });
+            }
+
+            selectBrand(brand, element) {
+                document.querySelectorAll('.brand-item').forEach(item => item.classList.remove('active'));
+                element.classList.add('active');
+                this.selectedBrand = brand;
+                this.renderBrandDetails(brand);
+            }
+
+            renderBrandDetails(brand) {
+                const brandGiftcards = giftcards[brand.id] || [];
+                const firstCard = brandGiftcards[0];
+                const logoUrl = firstCard ? firstCard.image : '';
+                this.mainContent.innerHTML = `
+                    <div class="content-header">
+                        <div class="brand-title">
+                            <img src="${'$'}{logoUrl}" alt="${'$'}{brand.name}" onerror="this.style.display='none'">
+                            ${'$'}{brand.name}
+                        </div>
+                    </div>
+                    <div class="brand-description">
+                        <h3>Brand Information</h3>
+                        <div class="attributes-grid">
+                            <div class="attribute"><div class="attribute-label">Brand ID</div><div class="attribute-value">${'$'}{brand.id}</div></div>
+                            <div class="attribute"><div class="attribute-label">Total Cards</div><div class="attribute-value">${'$'}{brandGiftcards.length}</div></div>
+                            <div class="attribute"><div class="attribute-label">Currency</div><div class="attribute-value">${'$'}{firstCard ? firstCard.currency : 'USD'}</div></div>
+                            <div class="attribute"><div class="attribute-label">Max Discount</div><div class="attribute-value">${'$'}{brandGiftcards.length ? Math.max(...brandGiftcards.map(c => c.discountPercentage || 0)).toFixed(2) : 0}%</div></div>
+                            <div class="attribute"><div class="attribute-label">Available Quantity</div><div class="attribute-value">${'$'}{brandGiftcards.reduce((sum, c) => sum + (c.quantity || 0), 0)}</div></div>
+                        </div>
+                    </div>
+                    <div class="giftcards-section">
+                        <h2 class="section-title">Gift Cards (${'$'}{brandGiftcards.length})</h2>
+                        <div class="table-container">
+                            <table class="giftcards-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th><th>Type</th><th>Currency</th><th>Denomination</th>
+                                        <th>Discount</th><th>Net Discount</th><th>Fee</th><th>Quantity</th><th>ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${'$'}{brandGiftcards.map(card => this.renderGiftcardRow(card)).join('')}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="giftcard-descriptions" id="giftcardDescriptions" style="display: none;">
+                        <h3>Gift Card Description</h3>
+                        <div class="description-item">
+                            <h4 id="selectedCardName"></h4>
+                            <p id="selectedCardDescription"></p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderGiftcardRow(card) {
+                const discount = card.discountPercentage || 0;
+                const effectiveDiscount = card.effectiveDiscount || 0;
+                const discountClass = discount > 0 ? 'discount-positive' : discount < 0 ? 'discount-negative' : '';
+                const effectiveClass = effectiveDiscount > 0 ? 'discount-positive' : 'discount-negative';
+                return `
+                    <tr onclick="window.piggyCardsViewer.selectGiftcard(${'$'}{card.id})" style="cursor: pointer;">
+                        <td>${'$'}{card.name}</td><td>${'$'}{card.priceType}</td><td>${'$'}{card.currency}</td>
+                        <td>${'$'}{card.denomination}</td>
+                        <td class="${'$'}{discountClass}">${'$'}{discount.toFixed(2)}%</td>
+                        <td class="${'$'}{effectiveClass}">${'$'}{effectiveDiscount.toFixed(0)} bps</td>
+                        <td>${'$'}{card.fee}</td><td>${'$'}{card.quantity}</td><td>${'$'}{card.id}</td>
+                    </tr>
+                `;
+            }
+
+            selectGiftcard(cardId) {
+                if (!this.selectedBrand) return;
+                const brandGiftcards = giftcards[this.selectedBrand.id] || [];
+                const card = brandGiftcards.find(c => c.id === cardId);
+                if (card) {
+                    document.getElementById('selectedCardName').textContent = card.name;
+                    document.getElementById('selectedCardDescription').innerHTML = card.description || 'No description available';
+                    document.getElementById('giftcardDescriptions').style.display = 'block';
+                    document.querySelectorAll('.giftcards-table tbody tr').forEach(row => row.classList.remove('selected'));
+                    event.currentTarget.classList.add('selected');
+                }
+            }
+
+            updateStatus(message) { this.statusBar.textContent = message; }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            window.piggyCardsViewer = new PiggyCardsViewer();
+        });
+    </script>
+</body>
+</html>"""
+    }
+
+    private fun cleanHtmlDescription(description: String): String {
+        return description
+            .replace("\\u0026", "&")
+            .replace("\\n", "<br>")
+            .replace("\\r", "")
+            .replace("\\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+            .replace("&#10;", "<br>")
+            .replace("&#13;", "")
+            .replace("&#160;", "&nbsp;")
+            .replace("&#9;", "&nbsp;&nbsp;&nbsp;&nbsp;")
+            .replace("&#8217;", "'")
+            .replace("&#8220;", "\"")
+            .replace("&#8221;", "\"")
+            .replace("&#8239;", "&nbsp;")
+            .replace("&#174;", "®")
+            .replace("&#169;", "©")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace(Regex("<br>\\s*<br>\\s*<br>+"), "<br><br>")
+            .replace(Regex("^<br>+"), "")
+            .replace(Regex("<br>+$"), "")
+            .trim()
+    }
+
+    private fun escapeJson(str: String): String {
+        return str.replace("\\", "\\\\")
+                  .replace("\"", "\\\"")
+                  .replace("\n", "\\n")
+                  .replace("\r", "\\r")
+                  .replace("\t", "\\t")
     }
 }

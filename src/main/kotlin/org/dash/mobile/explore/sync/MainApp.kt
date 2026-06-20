@@ -13,15 +13,17 @@ const val UPLOAD_ARG = "-upload"
 const val QUIET_ARG = "-quiet"
 const val PROD_ARG = "-prod"
 const val DEBUG_ARG = "-debug"
+const val OFFLINE_ARG = "-offline"
 
 @FlowPreview
 fun main(args: Array<String>) {
-    val validParams = setOf(UPLOAD_ARG, QUIET_ARG, PROD_ARG, DEBUG_ARG)
+    val validParams = setOf(UPLOAD_ARG, QUIET_ARG, PROD_ARG, DEBUG_ARG, OFFLINE_ARG)
 
     var upload = false
     var quietMode = false
     var prodMode = false
     var debugMode = false
+    var offlineMode = false
 
     if (args.isNotEmpty()) {
         for (arg in args) {
@@ -31,6 +33,7 @@ fun main(args: Array<String>) {
                 println("$QUIET_ARG - quiet mode: no notifications are pushed to Slack")
                 println("$PROD_ARG - production mode: use production data sources/destinations")
                 println("$DEBUG_ARG - output to CSV files for unit tests, BODY logging")
+                println("$OFFLINE_ARG - offline mode: skip all publishing to Google Cloud Storage")
                 exitProcess(1)
             }
         }
@@ -38,13 +41,15 @@ fun main(args: Array<String>) {
         quietMode = args.contains(QUIET_ARG)
         prodMode = args.contains(PROD_ARG)
         debugMode = args.contains(DEBUG_ARG)
+        offlineMode = args.contains(OFFLINE_ARG)
     }
     configureConsoleLogging()
 
     runBlocking(Dispatchers.IO) {
         SyncProcessor(
             if (prodMode) OperationMode.PRODUCTION else OperationMode.TESTNET,
-            debug = debugMode
+            debug = debugMode,
+            offlineMode = offlineMode
         ).syncData(File("."), upload, quietMode)
     }
 
