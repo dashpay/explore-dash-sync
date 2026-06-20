@@ -41,7 +41,7 @@ import java.util.zip.CheckedInputStream
 class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false, private val offlineMode: Boolean = false) {
     companion object {
         const val CURRENT_VERSION = 4
-        const val BUILD = 7
+        const val BUILD = 8
 
         // Prevents two concurrent invocations in the same JVM (Cloud Function container)
         // from racing on /tmp files (e.g. SQLITE_READONLY_DBMOVED when one deletes
