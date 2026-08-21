@@ -259,6 +259,9 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
             source = "CTX"
             sourceId = convertJsonData("sourceId", location)
             logoLocation = convertJsonData("logoUrl", merchantData)
+            if (logoLocation == null) {
+                logger.info("no logo for $name")
+            }
             coverImage = convertJsonData("cardImageUrl", merchantData)
             type = getType(merchant, location)
             redeemType = convertJsonData("redeemType", merchantData)
