@@ -81,7 +81,9 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             val quantity: Int,
             @SerializedName("brand_id") val brandId: Int
         ) {
-            val isFixed = priceType == "Fixed" || priceType == "Option"
+            // The API returns "Fixed", "Range" and "Options" (plural) - anything that
+            // isn't a range comes with a fixed set of denominations.
+            val isFixed = priceType == "Fixed" || priceType.startsWith("Option")
 
             fun toShortString(): String {
                 return "GiftCard(id=$id, name=$name, priceType=$priceType, currency=$currency, discount=$discountPercentage, min=$minDenomination, max=$maxDenomination, denom=$denomination, fee=$fee, brand=$brandId)"
@@ -256,7 +258,8 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                     }
 
                     giftCards?.forEach { giftCard ->
-                        val info = if (giftCard.priceType == "Fixed") {
+                        val info = if (giftCard.isFixed) {
+                            // "Options" cards list their denominations and have no min/max
                             giftCard.denomination
                         } else {
                             "(${giftCard.minDenomination}, ${giftCard.maxDenomination})"
