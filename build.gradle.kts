@@ -66,6 +66,13 @@ application {
     mainClass.set("org.dash.mobile.explore.sync.MainAppKt")
 }
 
+tasks.register<JavaExec>("piggyInventory") {
+    group = "application"
+    description = "Query the PiggyCards API and print gift card inventory levels sorted by quantity"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("org.dash.mobile.explore.sync.PiggyCardsInventoryAppKt")
+}
+
 tasks.register<ShadowJar>("shadowJarFun") {
     from(sourceSets.main.get().output)
     configurations = listOf(project.configurations.runtimeClasspath.get())

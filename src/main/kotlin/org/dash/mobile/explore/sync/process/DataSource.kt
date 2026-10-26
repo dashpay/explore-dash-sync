@@ -35,6 +35,8 @@ abstract class DataSource<T>(val slackMessenger: SlackMessenger, val debugMode: 
 
     abstract val logger: Logger
 
+    open fun generateHtmlFile(): String? = null
+
     protected abstract fun getRawData(): Flow<T>
 
     fun getData(statement: PreparedStatement) = getRawData()

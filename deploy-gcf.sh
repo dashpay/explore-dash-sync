@@ -17,8 +17,8 @@ TOPIC_NAME="explore-dash-sync-trigger-4"
 PROJECT_ID="dash-wallet-firebase"
 RUNTIME="java17"
 ENTRY_POINT="org.dash.mobile.explore.sync.Function"
-MEMORY="1024MB"
-TIMEOUT="600s"
+MEMORY="2048MB"
+TIMEOUT="3600s"
 
 echo -e "${GREEN}=== Dash Explore Sync - Google Cloud Function Deployment ===${NC}\n"
 

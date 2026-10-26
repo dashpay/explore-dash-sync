@@ -9,7 +9,10 @@ object MerchantNameNormalizer {
     private val logos = hashMapOf<String, String>()
     private val merchantIds = hashMapOf<String, String>()
     private val manualNames = hashMapOf(
-        "Domino\'s Pizza" to "Domino's"
+        "Domino\'s Pizza" to "Domino's",
+        "The Home Depot" to "Home Depot",
+        "TJX" to "TJ Maxx/Winners/Homesense/Marshalls/HomeGoods/Sierra",
+        "T.J.Maxx" to "TJ Maxx/Winners/Homesense/Marshalls/HomeGoods/Sierra"
     )
 
 
