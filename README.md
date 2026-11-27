@@ -90,8 +90,9 @@ recorded, so the sync cannot know how the `currency` of a card is written. The r
 
 - the `country` property the brands are fetched with is not US: every PiggyCards merchant is left out
 - the currency of the chosen card, trimmed and in upper case, is `USD`: kept as US/USD
-- it is another well-formed currency code (three letters): left out of v4 and v5 and listed with the value
-- it is absent, blank or anything else (`US Dollar`, `$`, `840`): kept as US/USD, which is what every PiggyCards
+- it is the ISO 4217 code of another currency (`CAD`, `EUR`, `GBP`): left out of v4 and v5 and listed with the
+  value
+- it is absent, blank or anything else (`US Dollar`, `$`, `840`, `USA`, `XXX`, `USS`): kept as US/USD, which is what every PiggyCards
   merchant was taken for before, and listed under "unrecognised currency, treated as USD as before"
 
 A `!!! WARNING` line follows when more than half of the US merchants are left out, or more than half are

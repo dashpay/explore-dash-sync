@@ -271,10 +271,11 @@ class ExploreRegionsTest {
 
         assertEquals(usd to null, regionAndReason("US", "USD"))
         assertEquals(usd to null, regionAndReason(" us ", " usd "))
-        for (currency in listOf("EUR", "cad", " gbp ")) {
+        for (currency in listOf("EUR", "cad", " gbp ", "JPY", "BHD")) {
             assertEquals(leftOut to PiggyCardsNote.NOT_USD, regionAndReason("US", currency), "$currency")
         }
-        for (currency in listOf(null, "", "  ", "US Dollar", "$", "840", "US", "USDT", "U\$D")) {
+        val notCurrencies = listOf("USA", "ABC", "XXX", "XTS", "XAU", "XDR", "USS", "usn")
+        for (currency in listOf(null, "", "  ", "US Dollar", "$", "840", "US", "USDT", "U\$D") + notCurrencies) {
             assertEquals(usd to PiggyCardsNote.UNRECOGNISED, regionAndReason("US", currency), "$currency")
         }
         for (currency in listOf("USD", "CAD", null, "$")) {

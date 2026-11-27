@@ -5,6 +5,7 @@ import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.process.data.GiftCardProvider
 import org.dash.mobile.explore.sync.utils.CSVExporter.saveMerchantDataToCsv
 import org.slf4j.LoggerFactory
+import java.util.Currency
 import java.util.Locale
 import kotlin.math.*
 
@@ -144,7 +145,7 @@ class MerchantLocationMerger(private val debug: Boolean) {
 
     /**
      * Why a PiggyCards merchant is not plainly US/USD, or null when it is. No response of PiggyCards has been
-     * recorded, so only a well-formed other currency code counts as proof that a card is not in USD.
+     * recorded, so only the ISO 4217 code of another currency counts as proof that a card is not in USD.
      * Anything else stays USD, which is what every PiggyCards merchant was taken for before.
      */
     private fun piggyCardsReason(merchant: MerchantData): String? {
@@ -152,9 +153,19 @@ class MerchantLocationMerger(private val debug: Boolean) {
         return when {
             merchant.country?.trim()?.uppercase() != US -> PiggyCardsNote.NOT_US
             currency == USD -> null
-            currency != null && currency.matches(Regex("[A-Z]{3}")) -> PiggyCardsNote.NOT_USD
+            currency != null && isOtherCurrency(currency) -> PiggyCardsNote.NOT_USD
             else -> PiggyCardsNote.UNRECOGNISED
         }
+    }
+
+    /**
+     * The code of a currency other than the US dollar. ISO 4217 also lists test, metal and "no currency" codes,
+     * which have no decimals, and USN and USS, which are US dollars.
+     */
+    private fun isOtherCurrency(code: String) = try {
+        Currency.getInstance(code).defaultFractionDigits >= 0 && code !in setOf(USD, "USN", "USS")
+    } catch (ex: IllegalArgumentException) {
+        false
     }
 
     fun combineMerchants(
