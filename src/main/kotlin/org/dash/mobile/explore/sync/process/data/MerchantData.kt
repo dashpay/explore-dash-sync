@@ -1,5 +1,6 @@
 package org.dash.mobile.explore.sync.process.data
 
+import org.dash.mobile.explore.sync.ExploreVersion
 import java.sql.PreparedStatement
 
 data class MerchantData(
@@ -48,12 +49,24 @@ data class MerchantData(
     var satOpen: String? = "",
     var satClose: String? = "",
     var sunOpen: String? = "",
-    var sunClose: String? = ""
+    var sunClose: String? = "",
+    var country: String? = null,
+    var currency: String? = null
 ) : Data {
 
     companion object {
 
-        const val INSERT_STATEMENT = "INSERT INTO merchant values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        private const val COLUMNS = "deeplink, plusCode, addDate, updateDate, paymentMethod, merchantId, id, active, " +
+            "name, address1, address2, address3, address4, latitude, longitude, website, phone, territory, city, " +
+            "source, sourceId, logoLocation, googleMaps, coverImage, type, redeemType, savingsPercentage, " +
+            "denominationsType"
+        private const val PLACEHOLDERS = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+
+        fun insertStatement(version: ExploreVersion) = if (version.hasRegions) {
+            "INSERT INTO merchant ($COLUMNS, country, currency) values($PLACEHOLDERS,?,?)"
+        } else {
+            "INSERT INTO merchant ($COLUMNS) values($PLACEHOLDERS)"
+        }
 
         const val DEEP_LINK_COL = 1
         const val PLUS_CODE_COL = 2
@@ -83,6 +96,8 @@ data class MerchantData(
         const val REDEEM_TYPE_COL = 26
         const val SAVINGS_PERCENTAGE_COL = 27
         const val DENOMINATION_TYPE_COL = 28
+        const val COUNTRY_COL = 29
+        const val CURRENCY_COL = 30
     }
 
     override fun transferInto(statement: PreparedStatement): PreparedStatement {
@@ -114,6 +129,10 @@ data class MerchantData(
             setString(REDEEM_TYPE_COL, redeemType ?: "none")
             setInt(SAVINGS_PERCENTAGE_COL, savingsPercentage ?: 0)
             setString(DENOMINATION_TYPE_COL, denominationsType)
+            if (parameterMetaData.parameterCount >= CURRENCY_COL) {
+                setString(COUNTRY_COL, country)
+                setString(CURRENCY_COL, currency)
+            }
         }
     }
 }

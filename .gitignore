@@ -2,6 +2,7 @@
 /.gradle/
 /build/
 *.json
+!/schemas/*.json
 .idea/
 .DS_Store
 *.properties

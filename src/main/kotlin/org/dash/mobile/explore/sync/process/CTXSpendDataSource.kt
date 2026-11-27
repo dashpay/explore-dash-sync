@@ -12,6 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.dash.mobile.explore.sync.DataSourceReport
 import org.dash.mobile.explore.sync.OperationMode
+import org.dash.mobile.explore.sync.US
 import org.dash.mobile.explore.sync.notice
 import org.dash.mobile.explore.sync.process.data.MerchantData
 import org.dash.mobile.explore.sync.slack.SlackMessenger
@@ -229,7 +230,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
         }
     }
 
-    private fun convert(
+    internal fun convert(
         merchant: JsonObject,
         location: JsonObject,
     ): MerchantData {
@@ -240,7 +241,7 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
             paymentMethod = "gift card"
             merchantId = convertJsonData("id", merchantData)
             active = true
-            name = MerchantNameNormalizer.getNormalizedName(convertJsonData("name", merchantData))
+            name = convertJsonData<String>("name", merchantData)?.let { MerchantNameNormalizer.normalizeName(it) }
             address1 = getAddress1(location)
             address2 = getAddress2(location)
             address3 = convertJsonData("postalCode", location)
@@ -249,9 +250,13 @@ class CTXSpendDataSource(slackMessenger: SlackMessenger, private val operationMo
             longitude = getLongitude(location)
             website = convertJsonData("website", merchantData)
             phone = convertJsonData("phone", location)
+            country = convertJsonData<String>("country", merchantData)?.trim()?.uppercase()
+            currency = convertJsonData<String>("currency", merchantData)?.trim()?.uppercase()
             val inState = location["territory"]
             inState?.let {
-                fixStateName(inState)?.apply {
+                // other countries reuse US state abbreviations for their own regions
+                val state = if (country == US) fixStateName(inState) else convertJsonData<String>("territory", location)
+                state?.apply {
                     territory = this
                 }
             }

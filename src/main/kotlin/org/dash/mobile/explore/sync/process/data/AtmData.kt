@@ -41,7 +41,9 @@ data class AtmLocation(
     val sellFeeAmt: String?
 ): Data {
     companion object {
-        const val INSERT_STATEMENT = "INSERT INTO atm values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        const val INSERT_STATEMENT = "INSERT INTO atm (postcode, manufacturer, id, active, name, address1, address2, " +
+            "address3, address4, latitude, longitude, website, phone, territory, city, source, sourceId, " +
+            "logoLocation, googleMaps, coverImage, type) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
 
         const val POSTCODE_COL = 1
         const val MANUFACTURER_COL = 2

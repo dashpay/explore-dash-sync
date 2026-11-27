@@ -1,0 +1,5 @@
+paymentMethod	merchantId	name	address1	address2	address3	latitude	longitude	website	phone	territory	city	source	sourceId	logoLocation	coverImage	type	redeemType	savingsPercentage	denominationsType	country	currency
+dash	100	Dash Cafe	1 Main St			33.4484	-112.074	https://example.org/0		Arizona	Phoenix	DCG	100			physical					
+dash	101	Dash Cafe	1 Main St			44.4759	-73.2121	https://example.org/1		Vermont	Burlington	DCG	101			physical					
+dash	102	Crypto Books						https://example.org/2				DCG	102			online					
+dash	103	Amazon						https://example.org/3				DCG	103			online					
