@@ -16,12 +16,11 @@ import java.time.format.DateTimeFormatter
 private const val GC_PROJECT_ID = "dash-wallet-firebase"
 
 private const val GCS_BUCKET_NAME = "dash-wallet-firebase.appspot.com"
-private const val GCS_LOCK_FILE_NAME = "explore/v4.lock"
 
 const val CHECKSUM_META_KEY = "Data-Checksum"
 const val TIMESTAMP_META_KEY = "Data-Timestamp"
 
-class GCManager(private val mode: OperationMode) {
+open class GCManager(private val mode: OperationMode) {
 
     private val logger = LoggerFactory.getLogger(GCManager::class.java)!!
 
@@ -29,18 +28,16 @@ class GCManager(private val mode: OperationMode) {
         createStorage()
     }
 
-    private val lockFileName by lazy {
-        "$GCS_LOCK_FILE_NAME-$mode"
-    }
+    internal fun lockFileName(version: ExploreVersion) = "explore/v${version.number}.lock-$mode"
 
-    fun remoteChecksum(dataFile: File): String? {
+    open fun remoteChecksum(dataFile: File): String? {
         return gcStorage.get(GCS_BUCKET_NAME)?.get(
             "explore/${dataFile.nameWithoutExtension}.db"
         )?.metadata?.get(CHECKSUM_META_KEY)
     }
 
     @Throws(IOException::class)
-    fun uploadObject(dataFile: File, timestamp: Long, checksumHex: String) {
+    open fun uploadObject(dataFile: File, timestamp: Long, checksumHex: String) {
         logger.info("Uploading data to GC Storage")
         val objectName = "${dataFile.nameWithoutExtension}.db"
         val blobId = BlobId.of(GCS_BUCKET_NAME, "explore/$objectName")
@@ -73,35 +70,35 @@ class GCManager(private val mode: OperationMode) {
     }
 
     @Throws(IOException::class)
-    fun checkLock(): Pair<Long, String?> {
-        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName)
+    open fun checkLock(version: ExploreVersion): Pair<Long, String?> {
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName(version))
         return lockFile?.run {
             Pair(createTime, metadata["mode"])
         } ?: Pair(-1, null)
     }
 
     @Throws(IOException::class)
-    fun cancelRequested(): Boolean {
-        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName) ?: return false
+    open fun cancelRequested(version: ExploreVersion): Boolean {
+        val lockFile = gcStorage.get(GCS_BUCKET_NAME, lockFileName(version)) ?: return false
         return lockFile.metadata?.get("cancel") == "true"
     }
 
     @Throws(IOException::class)
-    fun createLockFile(mode: String) {
+    open fun createLockFile(version: ExploreVersion, mode: String) {
         logger.debug("Creating .lock file")
-        val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName)
+        val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName(version))
         val blobInfo = BlobInfo.newBuilder(blobId)
             .setMetadata(mapOf("mode" to mode)).build()
         gcStorage.create(blobInfo)
-        logger.info(".lock file created ($mode)")
+        logger.info("v${version.number} .lock file created ($mode)")
     }
 
     @Throws(IOException::class)
-    fun deleteLockFile() {
+    open fun deleteLockFile(version: ExploreVersion) {
         logger.debug("Deleting .lock file")
-        val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName)
+        val blobId = BlobId.of(GCS_BUCKET_NAME, lockFileName(version))
         gcStorage.delete(blobId)
-        logger.info(".lock file deleted")
+        logger.info("v${version.number} .lock file deleted")
     }
 
     /** get the most recent locations DB from the cloud, but not one that was made today */

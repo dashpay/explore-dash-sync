@@ -1,12 +1,6 @@
 package org.dash.mobile.explore.sync
 
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flattenConcat
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.onCompletion
-import kotlinx.coroutines.flow.transform
-import kotlinx.coroutines.flow.asFlow
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.model.enums.CompressionLevel
@@ -29,7 +23,6 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.sql.Connection
 import java.sql.DriverManager
-import java.sql.PreparedStatement
 import java.sql.SQLException
 import java.text.SimpleDateFormat
 import java.util.*
@@ -38,30 +31,47 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.CheckedInputStream
 
 @FlowPreview
-class SyncProcessor(private val mode: OperationMode, private val debug: Boolean = false, private val offlineMode: Boolean = false) {
+class SyncProcessor(
+    private val mode: OperationMode,
+    private val debug: Boolean = false,
+    private val offlineMode: Boolean = false,
+    private val gcManager: GCManager = GCManager(mode)
+) {
     companion object {
-        const val CURRENT_VERSION = 4
-        const val BUILD = 8
+        const val BUILD = 9
 
         // Prevents two concurrent invocations in the same JVM (Cloud Function container)
         // from racing on /tmp files (e.g. SQLITE_READONLY_DBMOVED when one deletes
         // /tmp/explore.db while the other holds an open JDBC connection).
         private val isRunning = AtomicBoolean(false)
 
+        // every wallet release opens this entry, whatever the version of the file
+        private const val DB_NAME_IN_ZIP = "explore.db"
     }
+
+    internal class ImportedData(
+        val ctxData: List<MerchantData>,
+        val piggyCardsData: List<MerchantData>,
+        val dcgData: List<MerchantData>,
+        val atmData: List<AtmLocation>,
+        val merchants: RegionalResult
+    )
 
     private val logger = LoggerFactory.getLogger(SyncProcessor::class.java)!!
 
     private val slackMessenger = SlackMessenger()
 
-    private lateinit var dbFile: File
-
-    private val gcManager by lazy {
-        GCManager(mode)
-    }
-
     @FlowPreview
-    suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) {
+    suspend fun syncData(workingDir: File, forceUpload: Boolean, quietMode: Boolean) =
+        syncData(workingDir, forceUpload, quietMode, ::importData)
+
+    /** [import] is given a check to call between its steps, which throws once the sync is canceled */
+    internal suspend fun syncData(
+        workingDir: File,
+        forceUpload: Boolean,
+        quietMode: Boolean,
+        import: suspend (throwIfCanceled: () -> Unit) -> ImportedData
+    ) {
         slackMessenger.quietMode = quietMode
 
         if (!isRunning.compareAndSet(false, true)) {
@@ -72,111 +82,146 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             return
         }
 
-        slackMessenger.postSlackMessage("### Sync started for v$CURRENT_VERSION ($BUILD) ### - $mode", logger)
+        val allVersions = ExploreVersion.values().joinToString(" + ") { "v${it.number}" }
+        slackMessenger.postSlackMessage("### Sync started for $allVersions ($BUILD) ### - $mode", logger)
 
         if (offlineMode) {
             logger.notice("Offline mode: skipping all Google Cloud Storage operations")
         }
 
+        val lockedVersions = arrayListOf<ExploreVersion>()
         try {
-            if (!offlineMode) {
-                val syncLock = gcManager.checkLock()
-                val syncLockCreateTime = syncLock.first
-                // lock expires after 120 minutes if it wasn't removed for any reason
-                val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(2 * 60))
-                if (lockValid) {
-                    slackMessenger.postSlackMessage("Sync already in progress (${syncLock.second})", logger)
-                    return
+            for (version in ExploreVersion.values()) {
+                if (offlineMode || acquireLock(version)) {
+                    lockedVersions.add(version)
                 }
-                gcManager.createLockFile(mode.name)
+            }
+            if (lockedVersions.isEmpty()) {
+                return
             }
 
-            dbFile = createEmptyDB(workingDir)
-            val locationsDbFile = createLocationsDB(workingDir)
-            importData(dbFile, locationsDbFile)
-
-            val dbFileChecksum = calculateChecksum(dbFile)
-            logger.debug("DB file checksum $dbFileChecksum")
-
-            val dbZipFileName = when (mode) {
-                OperationMode.PRODUCTION -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION.zip"
-                OperationMode.TESTNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-testnet.zip"
-                OperationMode.DEVNET -> "${dbFile.nameWithoutExtension}-v$CURRENT_VERSION-devnet.zip"
-            }
-
-            val dbZipFile = File(workingDir, dbZipFileName)
-
-            if (offlineMode) {
-                // Offline mode: still produce the zip locally, just skip remote checksum and uploads
-                val timestamp = Calendar.getInstance().timeInMillis
-                val password = dbFileChecksum.toCharArray()
-                compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
-                logger.notice("Offline mode: created ${dbZipFile.absolutePath}")
-            } else {
-                val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
-                val changesDetected = dbFileChecksum != remoteChecksum
-
-                if (changesDetected || forceUpload) {
-                    if (changesDetected) {
-                        if (remoteChecksum != null) {
-                            slackMessenger.postSlackMessage(
-                                "Changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
-                                logger
-                            )
-                        } else {
-                            logger.notice("No remote data - uploading")
-                        }
-                    } else {
-                        logger.notice("Force upload active - updating")
-                    }
-
-                    throwIfCanceled()
-                    val timestamp = Calendar.getInstance().timeInMillis
-                    val password = dbFileChecksum.toCharArray()
-                    compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
-
-                    throwIfCanceled()
-                    // upload the zipped database
-                    gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
-                    // copy and upload the uncompressed database
-                    val locationsDbChecksum = calculateChecksum(locationsDbFile)
-                    gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
-                } else {
-                    logger.notice("No changes were detected, updating canceled")
-                    slackMessenger.postSlackMessage("No changes detected, updating canceled")
-                }
-
-                gcManager.deleteLockFile()
+            // the sources are fetched and merged once, then written once per version
+            val data = import { lockedVersions.forEach { throwIfCanceled(it) } }
+            for (version in lockedVersions.toList()) {
+                publish(version, data, workingDir, forceUpload)
+                releaseLock(version, lockedVersions)
             }
 
             slackMessenger.postSlackMessage("### Sync finished ###", logger)
         } catch (ex: InterruptedException) {
             slackMessenger.postSlackMessage("!!! Sync canceled !!!", logger)
-            if (!offlineMode) gcManager.deleteLockFile()
         } catch (ex: Exception) {
             logger.error(ex.message, ex)
             slackMessenger.postSlackMessage("### Sync failed ### ${ex.message}")
-            if (!offlineMode) gcManager.deleteLockFile()
         } finally {
-            isRunning.set(false)
+            try {
+                lockedVersions.toList().forEach { releaseLock(it, lockedVersions) }
+            } finally {
+                isRunning.set(false)
+            }
+        }
+    }
+
+    private fun releaseLock(version: ExploreVersion, lockedVersions: MutableList<ExploreVersion>) {
+        lockedVersions.remove(version)
+        if (!offlineMode) {
+            gcManager.deleteLockFile(version)
+        }
+    }
+
+    private suspend fun acquireLock(version: ExploreVersion): Boolean {
+        val syncLock = gcManager.checkLock(version)
+        val syncLockCreateTime = syncLock.first
+        // lock expires after 120 minutes if it wasn't removed for any reason
+        val lockValid = System.currentTimeMillis() < (syncLockCreateTime + TimeUnit.MINUTES.toMillis(2 * 60))
+        if (lockValid) {
+            slackMessenger.postSlackMessage(
+                "Sync of v${version.number} already in progress (${syncLock.second}): this run does not publish it",
+                logger
+            )
+            return false
+        }
+        gcManager.createLockFile(version, mode.name)
+        return true
+    }
+
+    internal suspend fun publish(version: ExploreVersion, data: ImportedData, workingDir: File, forceUpload: Boolean) {
+        val combinedMerchants = data.merchants.byVersion.getValue(version)
+        val dbFile = createEmptyDB(workingDir, version)
+        writeExploreDb(version, dbFile, data.dcgData, combinedMerchants, data.atmData)
+        val locationsDbFile = createLocationsDB(workingDir, version)
+        writeLocationsDb(locationsDbFile, data, combinedMerchants)
+
+        val dbFileChecksum = calculateChecksum(dbFile)
+        logger.debug("v${version.number} DB file checksum $dbFileChecksum")
+
+        val dbZipFileName = when (mode) {
+            OperationMode.PRODUCTION -> "explore-v${version.number}.zip"
+            OperationMode.TESTNET -> "explore-v${version.number}-testnet.zip"
+            OperationMode.DEVNET -> "explore-v${version.number}-devnet.zip"
+        }
+
+        val dbZipFile = File(workingDir, dbZipFileName)
+
+        if (offlineMode) {
+            // Offline mode: still produce the zip locally, just skip remote checksum and uploads
+            val timestamp = Calendar.getInstance().timeInMillis
+            val password = dbFileChecksum.toCharArray()
+            compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
+            logger.notice("Offline mode: created ${dbZipFile.absolutePath}")
+            return
+        }
+
+        val remoteChecksum = gcManager.remoteChecksum(dbZipFile)
+        val changesDetected = dbFileChecksum != remoteChecksum
+
+        if (changesDetected || forceUpload) {
+            if (changesDetected) {
+                if (remoteChecksum != null) {
+                    slackMessenger.postSlackMessage(
+                        "v${version.number}: changes detected ($dbFileChecksum vs $remoteChecksum) - updating",
+                        logger
+                    )
+                } else {
+                    logger.notice("v${version.number}: no remote data - uploading")
+                }
+            } else {
+                logger.notice("v${version.number}: force upload active - updating")
+            }
+
+            throwIfCanceled(version)
+            val timestamp = Calendar.getInstance().timeInMillis
+            val password = dbFileChecksum.toCharArray()
+            compress(dbFile, dbZipFile, password, timestamp, dbFileChecksum)
+
+            throwIfCanceled(version)
+            // upload the zipped database
+            gcManager.uploadObject(dbZipFile, timestamp, dbFileChecksum)
+            // copy and upload the uncompressed database
+            val locationsDbChecksum = calculateChecksum(locationsDbFile)
+            gcManager.uploadObject(locationsDbFile, timestamp, locationsDbChecksum)
+        } else {
+            logger.notice("v${version.number}: no changes were detected, updating canceled")
+            slackMessenger.postSlackMessage("v${version.number}: no changes detected, updating canceled")
         }
     }
 
     @Throws(InterruptedException::class)
-    private fun throwIfCanceled() {
-        if (!offlineMode && gcManager.cancelRequested()) {
+    private fun throwIfCanceled(version: ExploreVersion) {
+        if (!offlineMode && gcManager.cancelRequested(version)) {
             throw InterruptedException("Sync canceled")
         }
     }
 
-    @Throws(SQLException::class)
-    private suspend fun importData(dbFile: File, locationsDbFile: File) {
+    private suspend fun importData(throwIfCanceled: () -> Unit): ImportedData {
         val ctxDataSource = CTXSpendDataSource(slackMessenger, mode, debug)
         val ctxData = ctxDataSource.getDataList()
         val ctxReport = ctxDataSource.getReport()
+        throwIfCanceled()
         val piggyCardsDataSource = PiggyCardsDataSource(slackMessenger, mode, debug)
         val piggyCardsData = piggyCardsDataSource.getDataList()
         val piggyCardsReport = piggyCardsDataSource.getReport()
+        throwIfCanceled()
 
         // Generate HTML reports
         listOf(ctxDataSource, piggyCardsDataSource).forEach { dataSource ->
@@ -195,55 +240,23 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             saveMerchantDataToCsv(ctxData, "ctx.csv")
             saveMerchantDataToCsv(piggyCardsData, "piggycards.csv")
         }
-        var matchedInfo: List<MerchantLocationMerger.MatchInfo>? = null
 
-        val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
-        val combinedMerchants = try {
-            // merchant table
-            var prepStatement = dbConnection.prepareStatement(MerchantData.INSERT_STATEMENT)
-            val dcgDataFlow = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger, debug).getData(prepStatement)
-            val merger = MerchantLocationMerger(debug)
-            val combinedMerchants = merger.combineMerchants(listOf(ctxData, piggyCardsData))
-            logger.info("Duplicate locations: ${combinedMerchants.matchInfo.size}")
-            val merchantSet = hashSetOf<String>()
-            combinedMerchants.giftCardProviders.forEach { merchantSet.add(it.merchantId!!) }
-            logger.info("Total merchants: ${merchantSet.size}")
-            logger.info("Total Locations: ${combinedMerchants.merchants.size}")
-            report.mergedLocations = combinedMerchants.matchInfo.size
-            report.totalMerchants = merchantSet.size
-            report.totalLocations = combinedMerchants.merchants.size
+        val dcgData = DCGDataSource(mode != OperationMode.PRODUCTION, slackMessenger, debug).getDataList()
+        throwIfCanceled()
+        val atmData = CoinAtmRadarDataSource(slackMessenger, debug).getDataList()
+        throwIfCanceled()
 
-            matchedInfo = combinedMerchants.matchInfo
-            val combinedMerchantsFlow = combinedMerchants.merchants.asFlow().transform { data ->
-                data.transferInto(prepStatement)
-                emit(data)
-            }
-            
-            val merchantDataFlow = flowOf(dcgDataFlow, combinedMerchantsFlow).flattenConcat()
-            syncData(merchantDataFlow, prepStatement)
-
-            // gift_card_provider table
-            prepStatement = dbConnection.prepareStatement(GiftCardProvider.INSERT_STATEMENT)
-            val giftCardProviderFlow = combinedMerchants.giftCardProviders.asFlow().transform { data ->
-                data.transferInto(prepStatement)
-                emit(data)
-            }
-            syncData(giftCardProviderFlow, prepStatement)
-
-            // atm table
-            prepStatement = dbConnection.prepareStatement(AtmLocation.INSERT_STATEMENT)
-            val coinAtmRadarDataFlow = CoinAtmRadarDataSource(slackMessenger, debug).getData(prepStatement)
-            val atmDataFlow = flowOf(coinAtmRadarDataFlow).flattenConcat()
-            syncData(atmDataFlow, prepStatement)
-            combinedMerchants
-        } catch (ex: SQLException) {
-            logger.error(ex.message, ex)
-            throw ex
-        } finally {
-            if (!dbConnection.isClosed) {
-                dbConnection.close()
-            }
-        }
+        val merchants = MerchantLocationMerger(debug).combineByRegion(ctxData, piggyCardsData)
+        // the report describes the v4 (US) file
+        val combinedMerchants = merchants.byVersion.getValue(ExploreVersion.V4)
+        logger.info("Duplicate locations: ${combinedMerchants.matchInfo.size}")
+        val merchantSet = hashSetOf<String>()
+        combinedMerchants.giftCardProviders.forEach { merchantSet.add(it.merchantId!!) }
+        logger.info("Total merchants: ${merchantSet.size}")
+        logger.info("Total Locations: ${combinedMerchants.merchants.size}")
+        report.mergedLocations = combinedMerchants.matchInfo.size
+        report.totalMerchants = merchantSet.size
+        report.totalLocations = combinedMerchants.merchants.size
 
         // Compare to the previously created database
         val previousLocationsFile = if (!offlineMode) gcManager.downloadMostRecentLocationsDb() else null
@@ -362,14 +375,68 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
             }
         }
 
+        slackMessenger.postSlackMessage(report.toString(), logger)
+        slackMessenger.postSlackMessage(regionsSummary(merchants), logger)
+        val skipped = merchants.skippedMerchants
+        slackMessenger.postSlackMessage(
+            "CTX: ${skipped.size} merchants without a country or currency left out of v4 and v5 $skipped",
+            logger
+        )
+        slackMessenger.postSlackMessage(merchants.piggyCardsSummary, logger)
+        merchants.piggyCardsWarning?.let { slackMessenger.postSlackMessage(it, logger) }
+        throwIfCanceled()
+        return ImportedData(ctxData, piggyCardsData, dcgData, atmData, merchants)
+    }
 
-        // Process locations database
+    private fun regionsSummary(merchants: RegionalResult): String {
+        val all = merchants.byVersion.getValue(ExploreVersion.V5)
+        val countries = all.merchants.mapNotNull { it.country }.toSortedSet()
+        return "v5: ${all.giftCardProviders.map { it.merchantId }.toSet().size} merchants, " +
+            "${all.merchants.size} locations, ${countries.size} countries $countries"
+    }
+
+    @Throws(SQLException::class)
+    internal fun writeExploreDb(
+        version: ExploreVersion,
+        dbFile: File,
+        dcgData: List<MerchantData>,
+        combinedMerchants: CombinedResult,
+        atmData: List<AtmLocation>
+    ) {
+        val dbConnection = DriverManager.getConnection("jdbc:sqlite:${dbFile.path}")
+        try {
+            val merchantData = dcgData + combinedMerchants.merchants
+            insertAll(dbConnection, MerchantData.insertStatement(version), merchantData, version)
+            insertAll(
+                dbConnection,
+                GiftCardProvider.insertStatement(version),
+                combinedMerchants.giftCardProviders.toList(),
+                version
+            )
+            insertAll(dbConnection, AtmLocation.INSERT_STATEMENT, atmData, version)
+        } catch (ex: SQLException) {
+            logger.error(ex.message, ex)
+            throw ex
+        } finally {
+            if (!dbConnection.isClosed) {
+                dbConnection.close()
+            }
+        }
+    }
+
+    @Throws(SQLException::class)
+    private fun writeLocationsDb(locationsDbFile: File, data: ImportedData, combinedMerchants: CombinedResult) {
         val locationsDbConnection = DriverManager.getConnection("jdbc:sqlite:${locationsDbFile.path}")
         try {
             createLocationsTable(locationsDbConnection, "from_providers")
-            populateLocationsTable(locationsDbConnection, "from_providers", ctxData + piggyCardsData)
+            populateLocationsTable(locationsDbConnection, "from_providers", data.ctxData + data.piggyCardsData)
             createDuplicatesTable(locationsDbConnection)
-            populateDuplicatesTable(locationsDbConnection, matchedInfo, ctxData, piggyCardsData)
+            populateDuplicatesTable(
+                locationsDbConnection,
+                combinedMerchants.matchInfo,
+                data.merchants.usCtxData,
+                data.merchants.piggyCardsData
+            )
             createLocationsTable(locationsDbConnection, "final")
             populateLocationsTable(locationsDbConnection, "final", combinedMerchants.merchants)
         } catch (ex: SQLException) {
@@ -380,20 +447,18 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
                 locationsDbConnection.close()
             }
         }
-        slackMessenger.postSlackMessage(report.toString(), logger)
     }
 
-
     @Throws(IOException::class)
-    private fun createEmptyDB(workingDir: File): File {
-        val dbFile = File(workingDir, "explore.db")
+    internal fun createEmptyDB(workingDir: File, version: ExploreVersion): File {
+        val dbFile = File(workingDir, version.dbFileName)
         if (dbFile.exists()) {
             dbFile.delete()
         }
         dbFile.createNewFile()
         logger.debug("Creating empty DB ${dbFile.absolutePath}")
 
-        val emptyDBStream = javaClass.classLoader.getResourceAsStream("explore-empty.db")
+        val emptyDBStream = javaClass.classLoader.getResourceAsStream(version.emptyDbResource)
             ?: throw FileNotFoundException()
 
         emptyDBStream.use { input ->
@@ -406,10 +471,10 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
     }
 
     @Throws(IOException::class)
-    private fun createLocationsDB(workingDir: File): File {
+    private fun createLocationsDB(workingDir: File, version: ExploreVersion): File {
         val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val today = dateFormat.format(Date())
-        val dbFile = File(workingDir, "locations-$mode-$today.db")
+        val dbFile = File(workingDir, "locations${version.fileSuffix}-$mode-$today.db")
         if (dbFile.exists()) {
             dbFile.delete()
         }
@@ -440,35 +505,27 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         return Pair(newItems, removedItems)
     }
 
-    private suspend fun <T> syncData(data: Flow<T>, prepStatement: PreparedStatement) where T : Data {
-        var batchSize = 0
-        var totalRecords = 0
-
-        data.onCompletion {
-            if (batchSize > 0) {
-                prepStatement.executeBatch()
-                batchSize = 0
-            }
-
-            if (totalRecords == 0) {
-                throw IllegalStateException("No data received")
-            }
-
-            logger.info("Table sync complete ($totalRecords records)")
-        }.collect {
-            prepStatement.addBatch()
-            batchSize++
-            totalRecords++
-
-            if (batchSize == 128) {
-                prepStatement.executeBatch()
-                batchSize = 0
-            }
-
-            if (totalRecords % 20000 == 0) {
-                throwIfCanceled()
-            }
+    private fun insertAll(connection: Connection, insertStatement: String, rows: List<Data>, version: ExploreVersion) {
+        if (rows.isEmpty()) {
+            throw IllegalStateException("No data received")
         }
+
+        connection.prepareStatement(insertStatement).use { prepStatement ->
+            rows.forEachIndexed { index, row ->
+                row.transferInto(prepStatement)
+                prepStatement.addBatch()
+
+                if ((index + 1) % 128 == 0) {
+                    prepStatement.executeBatch()
+                }
+
+                if ((index + 1) % 20000 == 0) {
+                    throwIfCanceled(version)
+                }
+            }
+            prepStatement.executeBatch()
+        }
+        logger.info("Table sync complete (${rows.size} records)")
     }
 
     @Throws(SQLException::class)
@@ -539,6 +596,7 @@ class SyncProcessor(private val mode: OperationMode, private val debug: Boolean 
         zipParameters.isEncryptFiles = true
         zipParameters.encryptionMethod = EncryptionMethod.AES
         zipParameters.compressionLevel = CompressionLevel.HIGHER
+        zipParameters.fileNameInZip = DB_NAME_IN_ZIP
         ZipFile(outFile, password).apply {
             addFile(inFile, zipParameters)
             comment = "$timestamp#$checksum"

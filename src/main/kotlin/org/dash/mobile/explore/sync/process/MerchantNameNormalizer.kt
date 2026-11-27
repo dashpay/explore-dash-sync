@@ -4,17 +4,11 @@ import java.util.UUID
 import java.security.MessageDigest
 import java.nio.ByteBuffer
 
-object MerchantNameNormalizer {
+/** Names, logos and ids seen so far. Use one instance per merge so nothing carries over to another one */
+class MerchantNameNormalizer {
     private val names = hashMapOf<String, String>()
     private val logos = hashMapOf<String, String>()
     private val merchantIds = hashMapOf<String, String>()
-    private val manualNames = hashMapOf(
-        "Domino\'s Pizza" to "Domino's",
-        "The Home Depot" to "Home Depot",
-        "TJX" to "TJ Maxx/Winners/Homesense/Marshalls/HomeGoods/Sierra",
-        "T.J.Maxx" to "TJ Maxx/Winners/Homesense/Marshalls/HomeGoods/Sierra"
-    )
-
 
     /** The key for a name is lower case with no ' */
     private fun getKey(merchantName: String): String {
@@ -33,36 +27,6 @@ object MerchantNameNormalizer {
         val leastSigBits = bb.long
         
         return UUID(mostSigBits, leastSigBits)
-    }
-
-    fun removeSuffix(name: String) = when {
-        name.lowercase().endsWith(" usd") -> {
-            name.substring(0, name.length - 4)
-        }
-        name.lowercase().endsWith(" usa") -> {
-            name.substring(0, name.length - 4)
-        }
-        name.lowercase().endsWith("-usa") -> {
-            name.substring(0, name.length - 4)
-        }
-        name.lowercase().endsWith(" us") -> {
-            name.substring(0, name.length - 3)
-        }
-        name.endsWith("®") -> {
-            name.removeSuffix("®")
-        }
-        name.endsWith("(Same Day Delivery)") -> {
-            name.removeSuffix("(Same Day Delivery)")
-        }
-        else -> {
-            name
-        }
-    }.replace('’', '\'').trim()
-
-    fun normalizeName(name: String) = replaceHtmlEscapeSequences(removeSuffix(name))
-
-    fun replaceHtmlEscapeSequences(name: String): String {
-        return name.replace("&amp;", "&")
     }
 
     fun getNormalizedName(name: String?): String? {
@@ -112,5 +76,44 @@ object MerchantNameNormalizer {
             merchantIds[key] = newUUID.toString()
             newUUID
         }.toString()
+    }
+
+    companion object {
+        private val manualNames = hashMapOf(
+            "Domino\'s Pizza" to "Domino's",
+            "The Home Depot" to "Home Depot",
+            "TJX" to "TJ Maxx/Winners/Homesense/Marshalls/HomeGoods/Sierra",
+            "T.J.Maxx" to "TJ Maxx/Winners/Homesense/Marshalls/HomeGoods/Sierra"
+        )
+
+        fun removeSuffix(name: String) = when {
+            name.lowercase().endsWith(" usd") -> {
+                name.substring(0, name.length - 4)
+            }
+            name.lowercase().endsWith(" usa") -> {
+                name.substring(0, name.length - 4)
+            }
+            name.lowercase().endsWith("-usa") -> {
+                name.substring(0, name.length - 4)
+            }
+            name.lowercase().endsWith(" us") -> {
+                name.substring(0, name.length - 3)
+            }
+            name.endsWith("®") -> {
+                name.removeSuffix("®")
+            }
+            name.endsWith("(Same Day Delivery)") -> {
+                name.removeSuffix("(Same Day Delivery)")
+            }
+            else -> {
+                name
+            }
+        }.replace('’', '\'').trim()
+
+        fun normalizeName(name: String) = replaceHtmlEscapeSequences(removeSuffix(name))
+
+        fun replaceHtmlEscapeSequences(name: String): String {
+            return name.replace("&amp;", "&")
+        }
     }
 }

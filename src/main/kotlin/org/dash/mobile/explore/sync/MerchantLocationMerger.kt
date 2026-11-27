@@ -14,6 +14,51 @@ data class CombinedResult(
     val matchInfo: List<MerchantLocationMerger.MatchInfo>
 )
 
+/** [CombinedResult.matchInfo] of every version indexes into [usCtxData] and [piggyCardsData] */
+data class RegionalResult(
+    val usCtxData: List<MerchantData>,
+    val piggyCardsData: List<MerchantData>,
+    val byVersion: Map<ExploreVersion, CombinedResult>,
+    val skippedMerchants: List<String>,
+    val piggyCardsNotes: List<PiggyCardsNote>
+) {
+    val piggyCardsReasons = piggyCardsNotes.groupingBy { it.reason }.eachCount()
+
+    val piggyCardsSummary = "PiggyCards: ${piggyCardsData.mapNotNull { it.name }.distinct().size} merchants kept " +
+        "as US/USD, $piggyCardsReasons $piggyCardsNotes"
+
+    /**
+     * Set when most of the PiggyCards merchants fetched for the US were left out or had to be assumed to be USD,
+     * as a change in what PiggyCards returns as currency would do without any error.
+     */
+    val piggyCardsWarning: String?
+        get() {
+            val leftOut = piggyCardsReasons[PiggyCardsNote.NOT_USD] ?: 0
+            val unrecognised = piggyCardsReasons[PiggyCardsNote.UNRECOGNISED] ?: 0
+            val total = piggyCardsData.mapNotNull { it.name }.distinct().size + leftOut
+            return when {
+                leftOut * 2 > total -> "!!! WARNING: $leftOut of $total US PiggyCards merchants have a card in " +
+                    "another currency than USD and were left out of v4 and v5 - check the PiggyCards line !!!"
+                unrecognised * 2 > total -> "!!! WARNING: $unrecognised of $total US PiggyCards merchants have a card " +
+                    "without a recognisable currency and were kept as USD - check the PiggyCards line !!!"
+                else -> null
+            }
+        }
+}
+
+data class PiggyCardsNote(val name: String?, val country: String?, val currency: String?, val reason: String) {
+    companion object {
+        const val NOT_US = "not US, left out"
+        const val NOT_USD = "not USD, left out"
+        const val UNRECOGNISED = "unrecognised currency, treated as USD as before"
+    }
+
+    override fun toString() = "$name (country=$country, currency=$currency)"
+}
+
+const val US = "US"
+const val USD = "USD"
+
 class MerchantLocationMerger(private val debug: Boolean) {
     private val logger = LoggerFactory.getLogger(MerchantLocationMerger::class.java)!!
 
@@ -51,6 +96,67 @@ class MerchantLocationMerger(private val debug: Boolean) {
         val ignoreName: Boolean = false
     )
 
+    /**
+     * Gift card merchants for every explore DB version from one set of provider data.
+     * A name is one merchant per country and currency, so CTX merchants are merged region by region.
+     * The wallets buy PiggyCards cards in USD only, so its merchants join the US/USD ones or are left out.
+     */
+    fun combineByRegion(ctxData: List<MerchantData>, piggyCardsData: List<MerchantData>): RegionalResult {
+        val (complete, incomplete) = ctxData.partition { !it.country.isNullOrBlank() && !it.currency.isNullOrBlank() }
+        val skipped = incomplete.mapNotNull { it.name }.distinct()
+        if (skipped.isNotEmpty()) {
+            val count = skipped.size
+            logger.warn("CTX merchants without a country or currency left out of v4 and v5 ({}): {}", count, skipped)
+        }
+
+        val regions = complete.groupBy { it.country to it.currency }
+        val usRegion = US to USD
+        val usCtxData = regions[usRegion].orEmpty()
+        val piggyCardsNotes = linkedSetOf<PiggyCardsNote>()
+        val usPiggyCardsData = piggyCardsData.mapNotNull { merchant ->
+            val reason = piggyCardsReason(merchant)
+            if (reason != null) {
+                piggyCardsNotes.add(PiggyCardsNote(merchant.name, merchant.country, merchant.currency, reason))
+            }
+            if (reason == null || reason == PiggyCardsNote.UNRECOGNISED) {
+                merchant.copy(country = US, currency = USD)
+            } else {
+                null
+            }
+        }
+        piggyCardsNotes.groupBy { it.reason }.forEach { (reason, notes) ->
+            logger.warn("PiggyCards merchants {} ({}): {}", reason, notes.size, notes)
+        }
+        val us = combineMerchants(listOf(usCtxData, usPiggyCardsData))
+
+        val quietMerger = MerchantLocationMerger(false)
+        val others = regions.filterKeys { it != usRegion }.values.map {
+            quietMerger.combineMerchants(listOf(it, emptyList()))
+        }
+        val all = CombinedResult(
+            us.merchants + others.flatMap { it.merchants },
+            us.giftCardProviders + others.flatMap { it.giftCardProviders },
+            us.matchInfo
+        )
+        val byVersion = mapOf(ExploreVersion.V4 to us, ExploreVersion.V5 to all)
+        return RegionalResult(usCtxData, usPiggyCardsData, byVersion, skipped, piggyCardsNotes.toList())
+    }
+
+    /**
+     * Why a PiggyCards merchant is not plainly US/USD, or null when it is. No response of PiggyCards has been
+     * recorded, so only a well-formed other currency code counts as proof that a card is not in USD.
+     * Anything else stays USD, which is what every PiggyCards merchant was taken for before.
+     */
+    private fun piggyCardsReason(merchant: MerchantData): String? {
+        val currency = merchant.currency?.trim()?.uppercase()
+        return when {
+            merchant.country?.trim()?.uppercase() != US -> PiggyCardsNote.NOT_US
+            currency == USD -> null
+            currency != null && currency.matches(Regex("[A-Z]{3}")) -> PiggyCardsNote.NOT_USD
+            else -> PiggyCardsNote.UNRECOGNISED
+        }
+    }
+
     fun combineMerchants(
         lists: List<List<MerchantData>>,
         matchingParameters: MatchingParameters = MatchingParameters(
@@ -67,6 +173,7 @@ class MerchantLocationMerger(private val debug: Boolean) {
         )
     ): CombinedResult {
         if (lists.isEmpty()) return CombinedResult(emptyList(), emptyList(), emptyList())
+        val names = MerchantNameNormalizer()
         val merchantProviderMap = mutableMapOf<String, GiftCardProvider>() // Key: merchantId_provider
         
         if (lists.size == 1) {
@@ -93,7 +200,7 @@ class MerchantLocationMerger(private val debug: Boolean) {
                 plusCode = "merged"
             )
             
-            MerchantNameNormalizer.add(mergedData.name, mergedData.logoLocation, ctxData.merchantId)
+            names.add(mergedData.name, mergedData.logoLocation, ctxData.merchantId)
             
             // Add GiftCardProvider entries for both CTX and PiggyCards
             addGiftcardProvider(ctxData, ctxData.merchantId!!, merchantProviderMap)
@@ -120,11 +227,11 @@ class MerchantLocationMerger(private val debug: Boolean) {
         }
         lists[0].forEachIndexed { index, ctxItem ->
             if (matched.none { it.ctxIndex == index }) {
-                MerchantNameNormalizer.add(ctxItem.name, ctxItem.logoLocation, ctxItem.merchantId)
+                names.add(ctxItem.name, ctxItem.logoLocation, ctxItem.merchantId)
                 val newItem = ctxItem.copy(
-                    merchantId = MerchantNameNormalizer.getUniqueId(ctxItem.name!!),
-                    name = MerchantNameNormalizer.getNormalizedName(ctxItem.name),
-                    logoLocation = MerchantNameNormalizer.getLogo(ctxItem.name)
+                    merchantId = names.getUniqueId(ctxItem.name!!),
+                    name = names.getNormalizedName(ctxItem.name),
+                    logoLocation = names.getLogo(ctxItem.name)
                 )
                 resultsNew.add(newItem)
                 addGiftcardProvider(newItem, ctxItem.merchantId!!, merchantProviderMap)
@@ -133,15 +240,15 @@ class MerchantLocationMerger(private val debug: Boolean) {
 
         lists[1].forEachIndexed { index, piggyCardsItem ->
             if (matched.none { it.piggyIndex == index }) {
-                MerchantNameNormalizer.add(piggyCardsItem.name, piggyCardsItem.logoLocation, null)
+                names.add(piggyCardsItem.name, piggyCardsItem.logoLocation, null)
                 val newItem: MerchantData = piggyCardsItem.copy(
-                    name = MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name),
-                    merchantId = MerchantNameNormalizer.getUniqueId(piggyCardsItem.name!!),
-                    logoLocation = MerchantNameNormalizer.getLogo(piggyCardsItem.name)
+                    name = names.getNormalizedName(piggyCardsItem.name),
+                    merchantId = names.getUniqueId(piggyCardsItem.name!!),
+                    logoLocation = names.getLogo(piggyCardsItem.name)
                 )
                 if (piggyCardsItem.type == "online") {
                     val existingOnlineItem = resultsNew.find {
-                        it.name == MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name) &&
+                        it.name == names.getNormalizedName(piggyCardsItem.name) &&
                         it.type == "online"
                     }
                     if (existingOnlineItem != null) {
@@ -152,9 +259,9 @@ class MerchantLocationMerger(private val debug: Boolean) {
                         )
                         resultsNew.remove(existingOnlineItem)
                         resultsNew.add(existingOnlineItem.copy(
-                            name = MerchantNameNormalizer.getNormalizedName(piggyCardsItem.name),
-                            merchantId = MerchantNameNormalizer.getUniqueId(piggyCardsItem.name!!),
-                            logoLocation = MerchantNameNormalizer.getLogo(piggyCardsItem.name),
+                            name = names.getNormalizedName(piggyCardsItem.name),
+                            merchantId = names.getUniqueId(piggyCardsItem.name!!),
+                            logoLocation = names.getLogo(piggyCardsItem.name),
                             savingsPercentage = maxSavings
                         ))
                         // Add PiggyCards provider entry with the same merchantId
@@ -183,7 +290,7 @@ class MerchantLocationMerger(private val debug: Boolean) {
         // Deduplicate by composite key: normalized name + 4dp lat/lon + type
         val seen = HashSet<String>()
         val deduped = resultsNew.filter { m ->
-            val normName = MerchantNameNormalizer.getNormalizedName(m.name) ?: ""
+            val normName = names.getNormalizedName(m.name) ?: ""
             val lat = m.latitude?.let { "%.4f".format(Locale.US, it) } ?: "null"
             val lon = m.longitude?.let { "%.4f".format(Locale.US, it) } ?: "null"
             val key = "$normName|$lat|$lon|${m.type}"
@@ -213,7 +320,8 @@ class MerchantLocationMerger(private val debug: Boolean) {
             sourceId = merchantId,
             redeemType = merchant.redeemType,
             savingsPercentage = merchant.savingsPercentage,
-            denominationsType = merchant.denominationsType
+            denominationsType = merchant.denominationsType,
+            currency = merchant.currency
         )
         merchantProviderMap[providerKey] = merchantInfo
     }

@@ -73,6 +73,13 @@ tasks.register<JavaExec>("piggyInventory") {
     mainClass.set("org.dash.mobile.explore.sync.PiggyCardsInventoryAppKt")
 }
 
+tasks.register<JavaExec>("generateTemplate") {
+    group = "application"
+    description = "Build an empty explore database from a Room schema JSON: --args=\"<schema json> <output db>\""
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("org.dash.mobile.explore.sync.TemplateGeneratorKt")
+}
+
 tasks.register<ShadowJar>("shadowJarFun") {
     from(sourceSets.main.get().output)
     configurations = listOf(project.configurations.runtimeClasspath.get())

@@ -35,6 +35,45 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
     DataSource<MerchantData>(slackMessenger, debugMode) {
         companion object {
             const val SERVICE_FEE = 150 // 1.5% for CurPay
+
+        internal fun convert(
+            brand: Endpoint.Brand,
+            giftcard: Endpoint.Giftcard,
+            country: String
+        ): MerchantData {
+            return MerchantData().apply {
+                deeplink = null
+                paymentMethod = "gift card"
+                merchantId = brand.id
+                active = true
+                name = MerchantNameNormalizer.removeSuffix(brand.name)
+                address1 = "online"
+                address2 = null
+                address3 = null
+                latitude = null
+                longitude = null
+                website = null
+                phone = null
+                territory = ""
+                city = null
+                source = "PiggyCards"
+                sourceId = brand.id
+                logoLocation = giftcard.image
+                coverImage = giftcard.image
+                type = "online"
+                redeemType = "barcode"
+                // these fields may not be correct, just based on a single card
+                savingsPercentage = (giftcard.discountPercentage * 100).toInt() - SERVICE_FEE
+                denominationsType = if (giftcard.priceType == "Range") {
+                    "min-max"
+                } else {
+                    "fixed"
+                }
+                // as received: MerchantLocationMerger decides what counts as US/USD and reports the rest
+                this.country = country
+                currency = giftcard.currency
+            }
+        }
         }
     private lateinit var userId: String
     private lateinit var password: String
@@ -290,7 +329,7 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
                         else -> null
                     }
                     if (giftCard != null) {
-                        val merchantData = convert(brand, giftCard)
+                        val merchantData = convert(brand, giftCard, country)
 
                         if (merchantData.name.isNullOrEmpty()) {
                             invalid++
@@ -357,41 +396,6 @@ class PiggyCardsDataSource(slackMessenger: SlackMessenger, private val mode: Ope
             location.streetNumber + " " + location.street
         } else {
             location.street
-        }
-    }
-
-    private fun convert(
-        brand: Endpoint.Brand,
-        giftcard: Endpoint.Giftcard,
-    ): MerchantData {
-        return MerchantData().apply {
-            deeplink = null
-            paymentMethod = "gift card"
-            merchantId = brand.id
-            active = true
-            name = MerchantNameNormalizer.removeSuffix(brand.name)
-            address1 = "online"
-            address2 = null
-            address3 = null
-            latitude = null
-            longitude = null
-            website = null
-            phone = null
-            territory = ""
-            city = null
-            source = "PiggyCards"
-            sourceId = brand.id
-            logoLocation = giftcard.image
-            coverImage = giftcard.image
-            type = "online"
-            redeemType = "barcode"
-            // these fields may not be correct, just based on a single card
-            savingsPercentage = (giftcard.discountPercentage * 100).toInt() - SERVICE_FEE
-            denominationsType = if (giftcard.priceType == "Range") {
-                "min-max"
-            } else {
-                "fixed"
-            }
         }
     }
 
